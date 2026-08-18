@@ -5,7 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - Resilient Fallbacks & Smart Filtering
+## [Unreleased]
+
+## [0.2.0] - 2026-08-17 - Resilient Fallbacks & Smart Filtering
 
 This release hardens the server's two headline promises: **graceful degradation**
 (fallbacks now trigger on *failed* credentials, not just missing ones, and provider
@@ -91,7 +93,7 @@ to 82 tests, and CI now runs locked, reproducible resolution.
   `status: "degraded"`; schema bounds enforced; aggregate deadline cancels
   in-flight retries.
 
-## [0.1.0] - Initial Release: AI-Native Reddit MCP Server
+## [0.1.0] - 2026-08-16 - Initial Release: AI-Native Reddit MCP Server
 
 - Four LLM-oriented tools: `search_knowledge`, `explore_reddit_discussions`,
   `extract_public_opinion`, `analyze_niche_trends`.
