@@ -28,6 +28,10 @@ class RedditClient:
     Asynchronous client for interacting with the Reddit API using a resilient HTTP client.
     """
 
+    # Reddit's .json listings never return more than 100 items per request,
+    # regardless of the limit parameter.
+    MAX_COMMENT_LIMIT = 100
+
     def __init__(
         self, http_client: ResilientHTTPClient, search_provider: BaseSearchProvider
     ):
@@ -119,9 +123,25 @@ class RedditClient:
             raise RedditClientError(f"Error fetching subreddit trends: {e}") from e
 
     async def get_post_thread(
-        self, post_url: str, max_comments: int = 50
-    ) -> RedditThread:
-        """Fetch a specific post and its top comments, parsing the comment tree."""
+        self,
+        post_url: str,
+        max_comments: int = 50,
+        comment_offset: int = 0,
+        after_comment_id: str | None = None,
+    ) -> tuple[RedditThread, tuple[int, str] | None]:
+        """Fetch a specific post and its top comments, parsing the comment tree.
+
+        Returns the thread plus the continuation cursor for the next page —
+        the raw-stream offset (for request sizing) and the ID of the last
+        comment served — or None when the raw comment stream is exhausted.
+
+        Continuation anchors to `after_comment_id` (the last-served comment)
+        instead of skipping by count, so a live re-sort between requests can
+        neither duplicate already-served comments nor skip unseen ones after
+        the anchor. If the anchor fell out of the fetched window (heavy
+        re-sort), a RedditClientError is raised rather than silently
+        misaligned pages.
+        """
         if not self.http_client.auth_manager.has_credentials:
             raise RedditAuthRequiredError("OAuth credentials missing.")
 
@@ -130,7 +150,12 @@ class RedditClient:
             raise RedditClientError("Invalid Reddit post URL provided.")
 
         url = f"https://oauth.reddit.com/comments/{post_id}.json"
-        params = {"limit": max_comments + 20}  # Buffer for 'more' items
+        # Buffer for 'more' items; offset shifts the window into the raw stream.
+        # Reddit caps limit at 100 server-side; clamping client-side lets us
+        # tell "window was truncated" apart from a genuine re-sort.
+        requested_limit = max_comments + 20 + comment_offset
+        window_clamped = requested_limit > self.MAX_COMMENT_LIMIT
+        params = {"limit": min(requested_limit, self.MAX_COMMENT_LIMIT)}
 
         try:
             response = await self.http_client.get(url, params=params)
@@ -143,9 +168,12 @@ class RedditClient:
             post = self._map_submission(post_data)
 
             comments = []
+            raw_count = 0
+            anchor_found = after_comment_id is None
             comment_children = data[1].get("data", {}).get("children", [])
 
             def parse_comments(children: list[dict[str, Any]]):
+                nonlocal raw_count, anchor_found
                 for child in children:
                     if len(comments) >= max_comments:
                         return
@@ -154,9 +182,14 @@ class RedditClient:
                     c_data = child.get("data", {})
 
                     if kind == "t1":  # Comment
-                        mapped = self._map_comment(c_data, post.id, post.subreddit)
-                        if mapped:
-                            comments.append(mapped)
+                        if not anchor_found and c_data.get("id") == after_comment_id:
+                            # Everything before the anchor was already served.
+                            anchor_found = True
+                        elif anchor_found:
+                            mapped = self._map_comment(c_data, post.id, post.subreddit)
+                            if mapped:
+                                comments.append(mapped)
+                        raw_count += 1
 
                         # Recursively parse replies if they exist
                         replies = c_data.get("replies")
@@ -170,7 +203,22 @@ class RedditClient:
 
             parse_comments(comment_children)
 
-            return RedditThread(post=post, comments=comments)
+            if not anchor_found:
+                if window_clamped:
+                    # The requested window was truncated by Reddit's per-request
+                    # cap, so the anchor may simply lie beyond what could be
+                    # fetched — a bounded result, not a misalignment error.
+                    return RedditThread(post=post, comments=[]), None
+                raise RedditClientError(
+                    f"Continuation anchor {after_comment_id} not found in the "
+                    "fetched comment window; the live thread was re-sorted past "
+                    "the previous page. Restart pagination without a page_token."
+                )
+
+            next_cursor = (
+                (raw_count, comments[-1].id) if len(comments) >= max_comments else None
+            )
+            return RedditThread(post=post, comments=comments), next_cursor
         except Exception as e:
             raise RedditClientError(f"Error fetching thread: {e}") from e
 

@@ -1,4 +1,3 @@
-# pyrefly: ignore [missing-import]
 import logging
 
 from fastmcp import FastMCP
@@ -7,6 +6,7 @@ from reddit_mcp.application.tools import (
     analyze_niche_trends,
     explore_reddit_discussions,
     extract_public_opinion,
+    get_saved_posts,
     search_knowledge,
 )
 
@@ -33,6 +33,7 @@ def create_server() -> FastMCP:
     mcp.tool()(explore_reddit_discussions)
     mcp.tool()(extract_public_opinion)
     mcp.tool()(analyze_niche_trends)
+    mcp.tool()(get_saved_posts)
     logger.debug("FastMCP server initialized with AI-Native tools.")
 
     return mcp

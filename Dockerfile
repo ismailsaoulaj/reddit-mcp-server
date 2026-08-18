@@ -24,6 +24,9 @@ COPY --from=builder /app/dist/*.whl ./
 # Install the wheel
 RUN pip install --no-cache-dir ./*.whl && rm ./*.whl
 
+# Run as an unprivileged user
+USER nobody
+
 # The server communicates via standard I/O, so we don't expose ports.
 # We set the entrypoint to the CLI command defined in pyproject.toml
 ENTRYPOINT ["reddit-mcp"]

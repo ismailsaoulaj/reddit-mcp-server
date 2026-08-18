@@ -61,6 +61,7 @@ sequenceDiagram
 | `explore_reddit_discussions` | Discussion search with metrics | Gauging sentiment, upvote consensus, and topic exploration. |
 | `extract_public_opinion` | Deep comment tree extraction & filtering | Reading high-quality community opinions with noise & bots removed. |
 | `analyze_niche_trends` | Live trending & rising posts tracker | Identifying real-time problems, pain points, or new ideas in a niche. |
+| `get_saved_posts` | The user's own saved posts over a time period | Revisiting, summarizing, or triaging bookmarked content (requires the saved-items feed URL). |
 
 ---
 
@@ -89,6 +90,16 @@ To unlock the official Reddit API, create a `.env` file in the root directory:
 REDDIT_CLIENT_ID="your_client_id_here"
 REDDIT_CLIENT_SECRET="your_client_secret_here"
 ```
+
+Consider also setting `REDDIT_USER_AGENT` to a descriptive, unique value — Reddit's API guidelines ask for this, even in zero-config mode. If unset, the server generates a default with a random per-install suffix (persisted under your [XDG state directory](https://specifications.freedesktop.org/basedir-spec/latest/) so it stays stable across restarts).
+
+To enable the `get_saved_posts` tool, add your private saved-items feed URL:
+
+```env
+REDDIT_SAVED_RSS_URL="https://old.reddit.com/user/YOUR_USERNAME/saved.rss?feed=YOUR_FEED_TOKEN&user=YOUR_USERNAME"
+```
+
+While logged in, open `old.reddit.com/saved.rss` and copy the full URL you are redirected to (canonical form: `old.reddit.com/user/<name>/saved.rss?feed=...&user=...`). The `feed` token is a credential for your account — treat it like a password (the server never logs it and rejects non-Reddit hosts). The feed exposes the most recent ~100 saved items; scores and comment counts are not available through it.
 
 ---
 

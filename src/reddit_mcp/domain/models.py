@@ -77,7 +77,9 @@ class PaginatedPostResponse(BaseModel):
         None,
         description=(
             "Provenance of the data: None = official Reddit API, "
-            "'arctic_shift' = community archive (metrics may lag live Reddit)."
+            "'arctic_shift' = community archive (metrics may lag live Reddit), "
+            "'saved_rss' = the user's private saved-items feed "
+            "(scores/comment counts unavailable)."
         ),
     )
 
@@ -89,12 +91,20 @@ class PaginatedCommentResponse(BaseModel):
         ..., description="Temporal and spatial context for the AI."
     )
     data: list[RedditComment] = Field(..., description="The extracted comments.")
+    next_page_token: str | None = Field(
+        None,
+        description=(
+            "Pass this token to the tool again to fetch the next page of comments."
+        ),
+    )
     status: str = Field("success", description="Status of the request.")
     message: str | None = Field(None, description="System message or warning.")
     data_source: str | None = Field(
         None,
         description=(
             "Provenance of the data: None = official Reddit API, "
-            "'arctic_shift' = community archive (metrics may lag live Reddit)."
+            "'arctic_shift' = community archive (metrics may lag live Reddit), "
+            "'saved_rss' = the user's private saved-items feed "
+            "(scores/comment counts unavailable)."
         ),
     )
