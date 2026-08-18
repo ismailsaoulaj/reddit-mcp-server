@@ -89,7 +89,7 @@ def _install_id() -> str:
 
 def _default_user_agent() -> str:
     return (
-        f"reddit-mcp-server/0.2.0 "
+        f"reddit-mcp-server/0.3.0 "
         f"(by /u/reddit-mcp-server-dev; install:{_install_id()})"
     )
 

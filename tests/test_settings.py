@@ -28,7 +28,7 @@ def test_default_user_agent_is_stable_across_instances(isolated_env):
     config_b = AppConfig(_env_file=None)
 
     assert config_a.reddit_user_agent == config_b.reddit_user_agent
-    assert config_a.reddit_user_agent.startswith("reddit-mcp-server/0.2.0")
+    assert config_a.reddit_user_agent.startswith("reddit-mcp-server/0.3.0")
 
 
 def test_default_user_agent_persists_across_restart(isolated_env):
@@ -68,7 +68,7 @@ def test_default_user_agent_tolerates_unwritable_state_dir(
     config_b = AppConfig(_env_file=None)
 
     assert config_a.reddit_user_agent == config_b.reddit_user_agent
-    assert config_a.reddit_user_agent.startswith("reddit-mcp-server/0.2.0")
+    assert config_a.reddit_user_agent.startswith("reddit-mcp-server/0.3.0")
 
 
 def test_explicit_user_agent_wins():
@@ -143,4 +143,4 @@ def test_install_id_shared_across_concurrent_processes(tmp_path):
 
     user_agents = {stdout.strip() for stdout, _ in outputs}
     assert len(user_agents) == 1
-    assert user_agents.pop().startswith("reddit-mcp-server/0.2.0")
+    assert user_agents.pop().startswith("reddit-mcp-server/0.3.0")
