@@ -1399,8 +1399,8 @@ wheels = [
 ]
 
 [[package]]
-name = "reddit-mcp-server"
-version = "0.3.0"
+name = "reddit-mcp-ai"
+version = "0.3.1"
 source = { editable = "." }
 dependencies = [
     { name = "ddgs" },
