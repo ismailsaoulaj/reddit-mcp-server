@@ -488,8 +488,9 @@ async def analyze_niche_trends(
 
 SAVED_FEED_UNCONFIGURED_MESSAGE = (
     "Saved posts are unavailable: set REDDIT_SAVED_RSS_URL to your private "
-    "saved-items feed. While logged in, open old.reddit.com/saved.rss and copy "
-    "the full URL (it contains a secret feed token — treat it like a password)."
+    "saved-items feed. While logged in, open https://www.reddit.com/prefs/feeds/ "
+    "and copy the link for 'your saved links' (it contains a secret feed token — "
+    "treat it like a password)."
 )
 
 
