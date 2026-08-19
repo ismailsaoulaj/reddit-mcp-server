@@ -28,7 +28,7 @@ def test_default_user_agent_is_stable_across_instances(isolated_env):
     config_b = AppConfig(_env_file=None)
 
     assert config_a.reddit_user_agent == config_b.reddit_user_agent
-    assert config_a.reddit_user_agent.startswith("reddit-mcp-server/0.3.0")
+    assert config_a.reddit_user_agent.startswith("reddit-mcp-server/")
 
 
 def test_default_user_agent_persists_across_restart(isolated_env):
@@ -68,7 +68,22 @@ def test_default_user_agent_tolerates_unwritable_state_dir(
     config_b = AppConfig(_env_file=None)
 
     assert config_a.reddit_user_agent == config_b.reddit_user_agent
-    assert config_a.reddit_user_agent.startswith("reddit-mcp-server/0.3.0")
+    assert config_a.reddit_user_agent.startswith("reddit-mcp-server/")
+
+
+def test_global_config_env_file_support(monkeypatch, tmp_path):
+    # Ensure global XDG config .env is read properly
+    config_dir = tmp_path / "config" / "reddit-mcp-server"
+    config_dir.mkdir(parents=True)
+    env_file = config_dir / ".env"
+    env_file.write_text("REDDIT_CLIENT_ID=xdg_client_id\n", encoding="utf-8")
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.delenv("REDDIT_CLIENT_ID", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    config = AppConfig()
+    assert config.reddit_client_id == "xdg_client_id"
 
 
 def test_explicit_user_agent_wins():
@@ -143,4 +158,4 @@ def test_install_id_shared_across_concurrent_processes(tmp_path):
 
     user_agents = {stdout.strip() for stdout, _ in outputs}
     assert len(user_agents) == 1
-    assert user_agents.pop().startswith("reddit-mcp-server/0.3.0")
+    assert user_agents.pop().startswith("reddit-mcp-server/")

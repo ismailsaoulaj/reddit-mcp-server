@@ -2,10 +2,19 @@ import os
 import time
 import uuid
 from functools import lru_cache
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+try:
+    _VERSION = version("reddit-mcp-server")
+except PackageNotFoundError:
+    try:
+        _VERSION = version("reddit-mcp-ai")
+    except PackageNotFoundError:
+        _VERSION = "dev"
 
 _INSTALL_ID_LENGTH = 8
 _HEX_DIGITS = set("0123456789abcdef")
@@ -87,9 +96,14 @@ def _install_id() -> str:
     return _process_install_id()
 
 
+def _global_env_path() -> Path:
+    base = os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config"
+    return Path(base) / "reddit-mcp-server" / ".env"
+
+
 def _default_user_agent() -> str:
     return (
-        f"reddit-mcp-server/0.3.0 "
+        f"reddit-mcp-server/{_VERSION} "
         f"(by /u/reddit-mcp-server-dev; install:{_install_id()})"
     )
 
@@ -114,14 +128,20 @@ class AppConfig(BaseSettings):
         default=None,
         description=(
             "Private saved-items feed URL "
-            "(https://old.reddit.com/user/<name>/saved.rss?feed=...&user=...). "
+            "Found at https://www.reddit.com/prefs/feeds/ ('your saved links'). "
             "The feed token is the credential — treat it like a password."
         ),
     )
 
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+        env_file_encoding="utf-8",
+        extra="ignore",
     )
+
+    def __init__(self, **values):
+        if "_env_file" not in values:
+            values["_env_file"] = (_global_env_path(), ".env")
+        super().__init__(**values)
 
 
 @lru_cache
