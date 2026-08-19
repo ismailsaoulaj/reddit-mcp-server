@@ -180,7 +180,7 @@ class DependencyContainer:
         cls._reddit_client = client
 
 
-@llm_timeout(timeout_seconds=15, response_model=PaginatedPostResponse)
+@llm_timeout(timeout_seconds=25, response_model=PaginatedPostResponse)
 async def search_knowledge(
     query: str,
     subreddit: str | None = None,
@@ -241,7 +241,7 @@ async def search_knowledge(
     )
 
 
-@llm_timeout(timeout_seconds=15, response_model=PaginatedPostResponse)
+@llm_timeout(timeout_seconds=25, response_model=PaginatedPostResponse)
 async def explore_reddit_discussions(
     keyword: str,
     subreddit: str | None = None,

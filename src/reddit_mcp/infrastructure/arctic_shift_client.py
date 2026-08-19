@@ -79,7 +79,7 @@ class ArcticShiftClient:
             return []
 
         clean_ids = [pid.replace("t3_", "") for pid in post_ids]
-        url = f"{self.BASE_URL}/posts/search"
+        url = f"{self.BASE_URL}/posts/ids"
         params = {"ids": ",".join(clean_ids)}
 
         try:

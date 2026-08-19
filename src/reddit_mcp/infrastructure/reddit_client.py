@@ -274,6 +274,11 @@ class RedditClient:
         if not self.http_client.auth_manager.has_credentials:
             raise RedditAuthRequiredError("OAuth credentials missing.")
 
+        # Fail-fast: Validate OAuth token before performing external web search
+        token = await self.http_client.auth_manager.get_token()
+        if not token:
+            raise RedditAuthRequiredError("OAuth credentials invalid.")
+
         try:
             search_results = await self.search_provider.search(
                 query=query, subreddit=subreddit, time_filter=time_filter, limit=limit
