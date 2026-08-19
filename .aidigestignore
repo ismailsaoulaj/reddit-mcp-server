@@ -1,1 +1,6 @@
 uv.lock
+.pytest_cache/
+.ruff_cache/
+*.pyc
+dist/
+build/

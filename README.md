@@ -72,19 +72,19 @@ sequenceDiagram
 - Python 3.11 or higher
 - Reddit API App credentials (Optional, but recommended for live trending data & better rate limits)
 
-### Quick Start (Local Installation)
+### Quick Start
 
-1. **Clone and Install:**
+You can run this server directly without installation using `uvx` (recommended) or `pipx`:
 
 ```bash
-git clone https://github.com/ismailsaoulaj/reddit-mcp-server.git
-cd reddit-mcp-server
-pip install -e .
+uvx reddit-mcp-ai
+# OR
+pipx run reddit-mcp-ai
 ```
 
 2. **Configure your environment (Optional):**
 
-To unlock the official Reddit API, create a `.env` file in the root directory:
+To unlock the official Reddit API and Saved Posts, you can either inject environment variables via your MCP client config, or create a global configuration file at `~/.config/reddit-mcp-server/.env` (Mac/Linux) or `%APPDATA%\reddit-mcp-server\.env` (Windows):
 
 ```env
 REDDIT_CLIENT_ID="your_client_id_here"
@@ -96,10 +96,10 @@ Consider also setting `REDDIT_USER_AGENT` to a descriptive, unique value — Red
 To enable the `get_saved_posts` tool, add your private saved-items feed URL:
 
 ```env
-REDDIT_SAVED_RSS_URL="https://old.reddit.com/user/YOUR_USERNAME/saved.rss?feed=YOUR_FEED_TOKEN&user=YOUR_USERNAME"
+REDDIT_SAVED_RSS_URL="https://www.reddit.com/user/YOUR_USERNAME/saved.rss?feed=YOUR_FEED_TOKEN&user=YOUR_USERNAME"
 ```
 
-While logged in, open `old.reddit.com/saved.rss` and copy the full URL you are redirected to (canonical form: `old.reddit.com/user/<name>/saved.rss?feed=...&user=...`). The `feed` token is a credential for your account — treat it like a password (the server never logs it and rejects non-Reddit hosts). The feed exposes the most recent ~100 saved items; scores and comment counts are not available through it.
+While logged in, open **[reddit.com/prefs/feeds/](https://www.reddit.com/prefs/feeds/)** and copy the exact link for **"your saved links"**. The `feed` token is a credential for your account — treat it like a password (the server never logs it and rejects non-Reddit hosts). The feed exposes the most recent ~100 saved items; scores and comment counts are not available through it.
 
 ---
 
@@ -123,27 +123,47 @@ Edit your configuration file:
 - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
+**Simple / Zero-Config Setup (Recommended):**
 ```json
 {
   "mcpServers": {
     "reddit": {
-      "command": "hatch",
+      "command": "uvx",
       "args": [
-        "run",
-        "reddit-mcp"
-      ],
-      "cwd": "/absolute/path/to/reddit-mcp-server"
+        "reddit-mcp-ai"
+      ]
     }
   }
 }
 ```
 
-### 2. Cursor
+**Full Setup with Optional Features (OAuth & Saved Posts):**
+
+```json
+{
+  "mcpServers": {
+    "reddit": {
+      "command": "uvx",
+      "args": [
+        "reddit-mcp-ai"
+      ],
+      "env": {
+        "REDDIT_CLIENT_ID": "your_client_id_here",
+        "REDDIT_CLIENT_SECRET": "your_client_secret_here",
+        "REDDIT_SAVED_RSS_URL": "your_feed_url_here"
+      }
+    }
+  }
+}
+```
+
+### 2. Cursor / OpenCode
 
 Go to **Settings > Features > MCP** and add a new command-based server:
 - **Type:** command
 - **Name:** Reddit
-- **Command:** `hatch run reddit-mcp` (using the absolute path to your python/hatch environment)
+- **Command:** `uvx reddit-mcp-ai`
+- **Env:** (Optional) Add `REDDIT_SAVED_RSS_URL` and your feed link here if you want to use the saved posts feature.
 
 ---
 
@@ -164,7 +184,7 @@ pytest tests/
 ### Manual Testing with the MCP Inspector
 
 ```bash
-npx @modelcontextprotocol/inspector hatch run reddit-mcp
+npx @modelcontextprotocol/inspector uvx reddit-mcp-ai
 ```
 
 This will launch a web browser UI where you can invoke the `search_knowledge`, `explore_reddit_discussions`, `extract_public_opinion`, and `analyze_niche_trends` tools directly and inspect the JSON responses.

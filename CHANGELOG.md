@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-08-19
+
+### Added
+
+- Support for global `.env` configuration file via XDG config directory (`~/.config/reddit-mcp-server/.env`), allowing clean MCP client setups without inline secrets.
+- Dynamic package version resolution at runtime via `importlib.metadata`, removing hardcoded version strings from source and test files.
+- Added `reddit-mcp-ai` CLI script alias.
+
+### Changed
+
+- Distribution package renamed to `reddit-mcp-ai` for direct `uvx` and `pipx` execution.
+- Updated `get_saved_posts` setup instructions, error messages, and documentation to direct users to the reliable `https://www.reddit.com/prefs/feeds/` settings tab.
+- Updated documentation and client configurations (Claude Desktop, Cursor, OpenCode) to highlight zero-config execution via `uvx reddit-mcp-ai`.
+
+## [0.3.0] - 2026-08-18
+
 ## [0.3.0] - 2026-08-18
 
 Polish from the adversarial-review backlog (issues #15–#22).
@@ -152,6 +168,7 @@ to 82 tests, and CI now runs locked, reproducible resolution.
 - Strict stderr logging to keep the STDIO JSON-RPC stream clean.
 - 4-layer architecture (domain / infrastructure / application / interface).
 
+[0.3.1]: https://github.com/ismailsaoulaj/reddit-mcp-server/releases/tag/v0.3.1
 [0.3.0]: https://github.com/ismailsaoulaj/reddit-mcp-server/releases/tag/v0.3.0
 [0.2.0]: https://github.com/ismailsaoulaj/reddit-mcp-server/releases/tag/v0.2.0
 [0.1.0]: https://github.com/ismailsaoulaj/reddit-mcp-server/releases/tag/v0.1.0
