@@ -47,6 +47,9 @@ async def test_get_posts_by_ids_success(arctic_client, mock_http_client):
     assert len(posts) == 1
     assert posts[0].id == "abc"
     assert posts[0].title == "Arctic Post"
+    mock_http_client.get.assert_awaited_once_with(
+        f"{arctic_client.BASE_URL}/posts/ids", params={"ids": "abc"}
+    )
 
 
 @pytest.mark.asyncio

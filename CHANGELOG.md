@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-08-19
+
+### Fixed
+
+- Fixed Arctic Shift batch posts endpoint route from `/posts/search` to `/posts/ids`, restoring zero-config fallback functionality for search and discussion exploration tools.
+- Added fail-fast OAuth verification in `RedditClient.search()` to immediately trigger fallback flow on invalid credentials without incurring web-scraping latency.
+- Increased LLM tool timeouts to 25s on search-related tools to handle multi-provider fallback latency gracefully.
+
 ## [0.3.1] - 2026-08-19
 
 ### Added
@@ -168,6 +176,7 @@ to 82 tests, and CI now runs locked, reproducible resolution.
 - Strict stderr logging to keep the STDIO JSON-RPC stream clean.
 - 4-layer architecture (domain / infrastructure / application / interface).
 
+[0.3.2]: https://github.com/ismailsaoulaj/reddit-mcp-server/releases/tag/v0.3.2
 [0.3.1]: https://github.com/ismailsaoulaj/reddit-mcp-server/releases/tag/v0.3.1
 [0.3.0]: https://github.com/ismailsaoulaj/reddit-mcp-server/releases/tag/v0.3.0
 [0.2.0]: https://github.com/ismailsaoulaj/reddit-mcp-server/releases/tag/v0.2.0
