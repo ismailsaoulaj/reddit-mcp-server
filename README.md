@@ -84,11 +84,20 @@ pipx run reddit-mcp-ai
 
 2. **Configure your environment (Optional):**
 
-To unlock the official Reddit API and Saved Posts, you can either inject environment variables via your MCP client config, or create a global configuration file at `~/.config/reddit-mcp-server/.env` (Mac/Linux) or `%APPDATA%\reddit-mcp-server\.env` (Windows):
+To unlock the official Reddit API, Cookie Authentication, or Saved Posts, you can either inject environment variables via your MCP client config, or create a global configuration file at `~/.config/reddit-mcp-server/.env` (Mac/Linux) or `%APPDATA%\reddit-mcp-server\.env` (Windows):
 
 ```env
+# Optional: Official Reddit App Credentials
 REDDIT_CLIENT_ID="your_client_id_here"
 REDDIT_CLIENT_SECRET="your_client_secret_here"
+
+# Optional: Direct Cookie Auth (Instant sub-second access & pagination)
+# Extract from DevTools -> Application -> Cookies -> reddit_session (Use an alt account)
+REDDIT_SESSION_COOKIE="your_reddit_session_cookie_here"
+
+# Optional: Concurrency & Rate Limiting Shields
+REDDIT_MAX_CONCURRENCY=4
+REDDIT_RATE_LIMIT_PER_MINUTE=40
 ```
 
 Consider also setting `REDDIT_USER_AGENT` to a descriptive, unique value — Reddit's API guidelines ask for this, even in zero-config mode. If unset, the server generates a default with a random per-install suffix (persisted under your [XDG state directory](https://specifications.freedesktop.org/basedir-spec/latest/) so it stays stable across restarts).

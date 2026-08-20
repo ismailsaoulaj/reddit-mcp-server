@@ -10,6 +10,5 @@ build/
 __pycache__/
 *.pyc
 terminal
-CHANGELOG.md
 codebase.md
 *.tmp

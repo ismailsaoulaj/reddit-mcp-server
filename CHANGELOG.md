@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-08-20 - Resilient Multi-Tier Engine & Anti-Ban Shields
+
+This release introduces the high-availability **Cascading Multi-Tier Engine**, sub-second **Cookie Authentication**, and built-in **Protective Shields** (Rate Limiting, Concurrency Semaphore, and Singleflight Coalescing) to prevent WAF 403 blocks and IP bans under heavy AI traffic.
+
+### Added
+
+- **Cascading Multi-Tier Architecture:** Seamless fallback pipeline (`Official OAuth` -> `Session Cookie` -> `Browser-Impersonated Web JSON` -> `Enriched Public RSS` -> `DDG + Arctic Shift`).
+- **Optional Session Cookie Tier (`REDDIT_SESSION_COOKIE`):** Enables direct authenticated JSON queries, sub-second latency, and native Reddit pagination (`t3_...` cursors) without OAuth app registration.
+- **Token Bucket Rate Limiter (`_TokenBucketRateLimiter`):** Enforces safe requests-per-minute limits (`REDDIT_RATE_LIMIT_PER_MINUTE`, default: 40) with subtle random jitter to eliminate robotic periodicity.
+- **Global Concurrency Semaphore:** Bounds concurrent outbound requests (`REDDIT_MAX_CONCURRENCY`, default: 4) using `asyncio.Semaphore` to protect against parallel multi-agent swarms.
+- **Singleflight Request Coalescing (`_singleflight`):** Automatically merges concurrent identical in-flight requests into a single network call.
+- **Arctic Shift Batch RSS Enrichment:** Automatically enriches Tier-3 public RSS posts with live scores, upvote ratios, and comment counts via batch ID queries (`/posts/ids`).
+
+### Changed
+
+- **Upgraded Browser Emulation:** Upgraded `curl_cffi` impersonation target to `chrome131` with authentic Client Hints (`Sec-Ch-Ua`, `Sec-Ch-Ua-Platform`) and CORS metadata (`Sec-Fetch-Mode: cors`, `Sec-Fetch-Dest: empty`).
+- **Live Zero-Config Trends:** Revived `analyze_niche_trends` to work in real-time without API keys across all tiers.
+- **Extended Test Suite:** Expanded test suite from 82 to 138 unit and integration tests covering rate limiters, semaphores, cookies, and singleflight coalescing.
+
+### Fixed
+
+- **Fastly/Cloudflare WAF Bypass:** Fixed 403 blocks on direct JSON endpoints by aligning request headers and TLS fingerprint with modern Chrome navigation profiles.
+- **Login-Wall Fast Fallback:** Immediate early exit on HTML login walls and 403 responses to prevent wasted retry time and tool timeouts.
+
 ## [0.3.2] - 2026-08-19
 
 ### Fixed
@@ -176,6 +200,7 @@ to 82 tests, and CI now runs locked, reproducible resolution.
 - Strict stderr logging to keep the STDIO JSON-RPC stream clean.
 - 4-layer architecture (domain / infrastructure / application / interface).
 
+[0.4.0]: https://github.com/ismailsaoulaj/reddit-mcp-server/releases/tag/v0.4.0
 [0.3.2]: https://github.com/ismailsaoulaj/reddit-mcp-server/releases/tag/v0.3.2
 [0.3.1]: https://github.com/ismailsaoulaj/reddit-mcp-server/releases/tag/v0.3.1
 [0.3.0]: https://github.com/ismailsaoulaj/reddit-mcp-server/releases/tag/v0.3.0
