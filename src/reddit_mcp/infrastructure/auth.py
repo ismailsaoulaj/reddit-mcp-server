@@ -118,14 +118,16 @@ class RedditAuthManager:
 
     async def _refresh_guest_token(self) -> None:
         """
-        Fetch an anonymous guest/installed_client token without client secret.
+        Fetch an anonymous guest/installed_client token if client_id is configured.
         """
-        logger.info("Acquiring anonymous Reddit Guest token...")
+        if not self.client_id:
+            # Zero-config mode: public web/RSS endpoints are used directly.
+            self._token = None
+            self._expires_at = 0.0
+            return
 
-        # Reddit requires a client_id with empty secret for installed_client grant.
-        # If client_id is not set, we use a unique per-instance device ID.
-        public_client_id = self.client_id or self.device_id
-        encoded_auth = base64.b64encode(f"{public_client_id}:".encode()).decode("utf-8")
+        logger.info("Acquiring anonymous Reddit Guest token...")
+        encoded_auth = base64.b64encode(f"{self.client_id}:".encode()).decode("utf-8")
 
         headers = {
             "Authorization": f"Basic {encoded_auth}",

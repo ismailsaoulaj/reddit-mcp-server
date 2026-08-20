@@ -1,6 +1,8 @@
 import logging
 import re
 import time
+import xml.etree.ElementTree as ET
+from html import unescape
 from typing import Any
 
 from reddit_mcp.domain.enrichment import (
@@ -14,6 +16,10 @@ from reddit_mcp.infrastructure.http import ResilientHTTPClient
 from reddit_mcp.infrastructure.search.base import BaseSearchProvider
 
 logger = logging.getLogger(__name__)
+
+_ATOM = "{http://www.w3.org/2005/Atom}"
+_TAG_RE = re.compile(r"<[^>]+>")
+_WHITESPACE_RE = re.compile(r"\s+")
 
 
 class RedditClientError(Exception):
@@ -112,6 +118,46 @@ class RedditClient:
         match = re.search(r"/comments/([a-z0-9]+)", url)
         return match.group(1) if match else None
 
+    def _parse_atom_entry(self, entry: ET.Element, subreddit: str) -> RedditPost | None:
+        """Parse an Atom RSS entry into a RedditPost."""
+        link_el = entry.find(f"{_ATOM}link")
+        link = link_el.get("href", "") if link_el is not None else ""
+        match = re.search(r"/comments/([a-z0-9]+)", link)
+        if not match:
+            return None
+
+        post_id = match.group(1)
+        title = entry.findtext(f"{_ATOM}title") or "(untitled)"
+        content_raw = entry.findtext(f"{_ATOM}content") or ""
+        clean_text = _WHITESPACE_RE.sub(
+            " ", unescape(_TAG_RE.sub(" ", content_raw))
+        ).strip()
+
+        updated_str = entry.findtext(f"{_ATOM}updated") or entry.findtext(
+            f"{_ATOM}published"
+        )
+        created_utc = None
+        if updated_str:
+            try:
+                from datetime import datetime
+
+                created_utc = datetime.fromisoformat(updated_str).timestamp()
+            except Exception:  # noqa: BLE001
+                created_utc = None
+
+        return RedditPost(
+            id=post_id,
+            title=title,
+            subreddit=subreddit,
+            score=0,
+            upvote_ratio=0.0,
+            num_comments=0,
+            url=link,
+            age_in_days=calculate_age_in_days(created_utc),
+            created_at_human=format_timestamp(created_utc),
+            text_preview=truncate_text(clean_text, 500),
+        )
+
     async def get_subreddit_trends(
         self,
         subreddit: str,
@@ -121,7 +167,7 @@ class RedditClient:
         after: str | None = None,
         before: str | None = None,
     ) -> tuple[list[RedditPost], str | None]:
-        """Fetch live trending posts from a subreddit using cascading fallback and caching."""
+        """Fetch live trending posts from a subreddit using cascading fallback (OAuth -> Web JSON -> Public RSS)."""
         subreddit = subreddit.strip()
         if subreddit.startswith("/r/"):
             subreddit = subreddit[3:]
@@ -140,35 +186,59 @@ class RedditClient:
             params["before"] = before
 
         data = None
-        # Tier 1: Try OAuth / Guest API
-        try:
-            url = f"https://oauth.reddit.com/r/{subreddit}/{category}.json"
-            response = await self.http_client.get(url, params=params)
-            data = response.json()
-        except Exception as e:  # noqa: BLE001
-            logger.info(
-                f"OAuth/Guest trends fetch failed ({e}); falling back to public web JSON."
-            )
+        # Tier 1: Try OAuth if token exists
+        token = await self.http_client.auth_manager.get_token()
+        if token:
+            try:
+                url = f"https://oauth.reddit.com/r/{subreddit}/{category}.json"
+                response = await self.http_client.get(url, params=params)
+                data = response.json()
+            except Exception as e:  # noqa: BLE001
+                logger.info(
+                    f"OAuth trends fetch failed ({e}); falling back to public web JSON."
+                )
 
         # Tier 2: Fallback to Public Web JSON
         if data is None:
             try:
-                public_url = f"https://old.reddit.com/r/{subreddit}/{category}.json"
+                public_url = f"https://www.reddit.com/r/{subreddit}/{category}.json"
                 data = await self.http_client.get_public_web(public_url, params=params)
-            except Exception as e:
-                raise RedditClientError(
-                    f"Error fetching subreddit trends from all tiers: {e}"
-                ) from e
+            except Exception as e:  # noqa: BLE001
+                logger.info(
+                    f"Public JSON trends fetch failed ({e}); falling back to public RSS feed."
+                )
 
-        posts = []
-        for child in data.get("data", {}).get("children", []):
-            if child.get("kind") == "t3":
-                posts.append(self._map_submission(child["data"]))
+        if data and isinstance(data, dict) and "data" in data:
+            posts = []
+            for child in data.get("data", {}).get("children", []):
+                if child.get("kind") == "t3":
+                    posts.append(self._map_submission(child["data"]))
 
-        new_after = data.get("data", {}).get("after")
-        result = (posts, new_after)
-        self._set_cache(cache_key, result)
-        return result
+            new_after = data.get("data", {}).get("after")
+            result = (posts, new_after)
+            self._set_cache(cache_key, result)
+            return result
+
+        # Tier 3: Fallback to Public RSS Feed (Never blocked by lor2 login wall)
+        try:
+            rss_url = f"https://www.reddit.com/r/{subreddit}/{category}.rss"
+            xml_text = await self.http_client.get_public_text(
+                rss_url, params={"limit": limit}
+            )
+            root = ET.fromstring(xml_text)
+            rss_posts = []
+            for entry in root.findall(f"{_ATOM}entry"):
+                parsed_post = self._parse_atom_entry(entry, subreddit)
+                if parsed_post:
+                    rss_posts.append(parsed_post)
+
+            result = (rss_posts[:limit], None)
+            self._set_cache(cache_key, result)
+            return result
+        except Exception as e:
+            raise RedditClientError(
+                f"Error fetching subreddit trends from all tiers: {e}"
+            ) from e
 
     async def get_post_thread(
         self,
@@ -194,20 +264,22 @@ class RedditClient:
         params = {"limit": min(requested_limit, self.MAX_COMMENT_LIMIT)}
 
         data = None
-        # Tier 1: Try OAuth / Guest API
-        try:
-            url = f"https://oauth.reddit.com/comments/{post_id}.json"
-            response = await self.http_client.get(url, params=params)
-            data = response.json()
-        except Exception as e:  # noqa: BLE001
-            logger.info(
-                f"OAuth/Guest thread fetch failed ({e}); falling back to public web JSON."
-            )
+        # Tier 1: Try OAuth if token exists
+        token = await self.http_client.auth_manager.get_token()
+        if token:
+            try:
+                url = f"https://oauth.reddit.com/comments/{post_id}.json"
+                response = await self.http_client.get(url, params=params)
+                data = response.json()
+            except Exception as e:  # noqa: BLE001
+                logger.info(
+                    f"OAuth thread fetch failed ({e}); falling back to public web JSON."
+                )
 
         # Tier 2: Fallback to Public Web JSON
         if data is None or not isinstance(data, list) or len(data) < 2:
             try:
-                public_url = f"https://old.reddit.com/comments/{post_id}.json"
+                public_url = f"https://www.reddit.com/comments/{post_id}.json"
                 data = await self.http_client.get_public_web(public_url, params=params)
             except Exception as e:
                 raise RedditClientError(
@@ -292,24 +364,26 @@ class RedditClient:
             params["after"] = after
 
         data = None
-        # Tier 1: Try OAuth / Guest API
-        try:
-            url = "https://oauth.reddit.com/search.json"
-            if subreddit:
-                url = f"https://oauth.reddit.com/r/{subreddit}/search.json"
-            response = await self.http_client.get(url, params=params)
-            data = response.json()
-        except Exception as e:  # noqa: BLE001
-            logger.info(
-                f"OAuth/Guest search failed ({e}); falling back to public web JSON."
-            )
+        # Tier 1: Try OAuth if token exists
+        token = await self.http_client.auth_manager.get_token()
+        if token:
+            try:
+                url = "https://oauth.reddit.com/search.json"
+                if subreddit:
+                    url = f"https://oauth.reddit.com/r/{subreddit}/search.json"
+                response = await self.http_client.get(url, params=params)
+                data = response.json()
+            except Exception as e:  # noqa: BLE001
+                logger.info(
+                    f"OAuth search failed ({e}); falling back to public web JSON."
+                )
 
         # Tier 2: Fallback to Public Web JSON
         if data is None:
             try:
-                public_url = "https://old.reddit.com/search.json"
+                public_url = "https://www.reddit.com/search.json"
                 if subreddit:
-                    public_url = f"https://old.reddit.com/r/{subreddit}/search.json"
+                    public_url = f"https://www.reddit.com/r/{subreddit}/search.json"
                 data = await self.http_client.get_public_web(public_url, params=params)
             except Exception as e:
                 raise RedditClientError(
@@ -358,20 +432,22 @@ class RedditClient:
             params = {"id": ",".join(post_ids)}
             data = None
 
-            # Tier 1: Try OAuth / Guest API info.json
-            try:
-                url = "https://oauth.reddit.com/api/info.json"
-                response = await self.http_client.get(url, params=params)
-                data = response.json()
-            except Exception as e:  # noqa: BLE001
-                logger.info(
-                    f"OAuth info.json failed ({e}); attempting public web info."
-                )
+            # Tier 1: Try OAuth if token exists
+            token = await self.http_client.auth_manager.get_token()
+            if token:
+                try:
+                    url = "https://oauth.reddit.com/api/info.json"
+                    response = await self.http_client.get(url, params=params)
+                    data = response.json()
+                except Exception as e:  # noqa: BLE001
+                    logger.info(
+                        f"OAuth info.json failed ({e}); attempting public web info."
+                    )
 
             # Tier 2: Fallback to public web info
             if data is None:
                 try:
-                    public_url = "https://old.reddit.com/api/info.json"
+                    public_url = "https://www.reddit.com/api/info.json"
                     data = await self.http_client.get_public_web(
                         public_url, params=params
                     )

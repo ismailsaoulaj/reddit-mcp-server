@@ -11,8 +11,10 @@ def mock_http_client():
     client = MagicMock()
     client.auth_manager = MagicMock()
     client.auth_manager.has_credentials = True
+    client.auth_manager.get_token = AsyncMock(return_value="mock_token")
     client.get = AsyncMock()
     client.get_public_web = AsyncMock()
+    client.get_public_text = AsyncMock()
     return client
 
 

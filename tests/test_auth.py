@@ -16,14 +16,25 @@ def auth_env(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_auth_manager_missing_env_acquires_guest_token():
-    # When credentials are missing, it acquires an anonymous guest token
+async def test_auth_manager_missing_env_returns_none_cleanly():
+    # In zero-config mode, get_token returns None cleanly without network calls
     with patch.dict(os.environ, clear=True):
         get_settings.cache_clear()
         with patch("pathlib.Path.is_file", return_value=False):
             manager = RedditAuthManager(user_agent="test")
             assert manager.has_credentials is False
-            assert manager.auth_mode == "guest_oauth"
+            token = await manager.get_token()
+            assert token is None
+
+
+@pytest.mark.asyncio
+async def test_auth_manager_client_id_only_acquires_guest_token():
+    # When client_id is set without secret, it acquires a guest token
+    with patch.dict(os.environ, clear=True):
+        get_settings.cache_clear()
+        with patch("pathlib.Path.is_file", return_value=False):
+            manager = RedditAuthManager(user_agent="test")
+            manager.client_id = "custom_client_id"
 
             mock_response = MagicMock()
             mock_response.status_code = 200
@@ -34,19 +45,6 @@ async def test_auth_manager_missing_env_acquires_guest_token():
             with patch("httpx.AsyncClient.post", return_value=mock_response):
                 token = await manager.get_token()
             assert token == "guest_token_123"
-
-
-@pytest.mark.asyncio
-async def test_auth_manager_missing_env_handles_guest_failure():
-    with patch.dict(os.environ, clear=True):
-        get_settings.cache_clear()
-        with patch("pathlib.Path.is_file", return_value=False):
-            manager = RedditAuthManager(user_agent="test")
-            mock_response = MagicMock()
-            mock_response.status_code = 403
-            with patch("httpx.AsyncClient.post", return_value=mock_response):
-                token = await manager.get_token()
-            assert token is None
 
 
 from unittest.mock import MagicMock

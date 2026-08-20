@@ -57,33 +57,34 @@ class ResilientHTTPClient:
         self, url: str, params: dict[str, Any] | None = None, max_retries: int = 2
     ) -> dict[str, Any]:
         """
-        Fetch public JSON from old.reddit.com or reddit.com with browser impersonation and retries.
+        Fetch public JSON from www.reddit.com with browser impersonation and retries.
         Serves as Tier 2 direct fallback when OAuth/Guest API is unavailable.
         """
-        target_url = url.replace("https://www.reddit.com", "https://old.reddit.com")
-        if (
-            not target_url.startswith("https://old.reddit.com")
-            and "reddit.com" in target_url
-        ):
-            target_url = target_url.replace(
-                "https://reddit.com", "https://old.reddit.com"
-            )
+        target_url = url.replace("https://oauth.reddit.com", "https://www.reddit.com")
+        target_url = target_url.replace(
+            "https://old.reddit.com", "https://www.reddit.com"
+        )
 
         attempt = 0
         while attempt < max_retries:
-            # 1. Try curl_cffi if available
+            # 1. Try curl_cffi if available (bypasses bot protection)
             if self._curl_session is not None:
                 try:
                     headers = {
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                        "Accept": "application/json, text/javascript, */*; q=0.01",
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,application/json,*/*;q=0.8",
                         "Accept-Language": "en-US,en;q=0.9",
                     }
                     res = await self._curl_session.get(
                         target_url, params=params, headers=headers, timeout=6.0
                     )
                     if res.status_code == 200:
-                        return res.json()
+                        text = res.text.strip()
+                        if text.startswith(("{", "[")):
+                            return res.json()
+                        logger.warning(
+                            f"curl_cffi received HTML instead of JSON for {target_url}."
+                        )
 
                     if res.status_code == 429 or res.status_code >= 500:
                         retry_after = (
@@ -111,10 +112,12 @@ class ResilientHTTPClient:
             try:
                 headers = {"User-Agent": self.user_agent}
                 response = await self.client.get(
-                    target_url, params=params, headers=headers
+                    target_url, params=params, headers=headers, follow_redirects=False
                 )
                 if response.status_code == 200:
-                    return response.json()
+                    text = response.text.strip()
+                    if text.startswith(("{", "[")):
+                        return response.json()
 
                 if response.status_code == 429 or response.status_code >= 500:
                     retry_after = response.headers.get("Retry-After")
@@ -145,6 +148,38 @@ class ResilientHTTPClient:
         raise RedditRateLimitError(
             f"Failed to fetch public web data after {max_retries} attempts: {target_url}"
         )
+
+    async def get_public_text(
+        self, url: str, params: dict[str, Any] | None = None
+    ) -> str:
+        """Fetch raw XML/text from public Reddit endpoints (such as public RSS feeds)."""
+        target_url = url.replace("https://oauth.reddit.com", "https://www.reddit.com")
+        target_url = target_url.replace(
+            "https://old.reddit.com", "https://www.reddit.com"
+        )
+
+        if self._curl_session is not None:
+            try:
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                    "Accept": "application/rss+xml, application/atom+xml, text/xml, */*",
+                }
+                res = await self._curl_session.get(
+                    target_url, params=params, headers=headers, timeout=6.0
+                )
+                if res.status_code == 200 and "<feed" in res.text:
+                    return res.text
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    f"curl_cffi public text fetch failed for {target_url}: {e}"
+                )
+
+        headers = {"User-Agent": self.user_agent}
+        response = await self.client.get(
+            target_url, params=params, headers=headers, follow_redirects=True
+        )
+        response.raise_for_status()
+        return response.text
 
     @staticmethod
     def _is_reddit_url(url: str) -> bool:
