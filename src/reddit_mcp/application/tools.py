@@ -462,7 +462,9 @@ async def analyze_niche_trends(
     By looking at 'rising' or 'hot' posts, you can identify what problems users are actively struggling with RIGHT NOW.
     Always compare the post's `created_at` with the `current_server_date` provided in `meta_context`.
     """
-    logger.info(f"analyze_niche_trends: subreddit='{subreddit_name}'")
+    logger.info(
+        f"analyze_niche_trends: subreddit='{subreddit_name}', category='{trend_type}'"
+    )
     client = DependencyContainer.get_reddit_client()
 
     try:
@@ -472,16 +474,16 @@ async def analyze_niche_trends(
         return PaginatedPostResponse(
             meta_context=build_meta_context(), data=posts, next_page_token=next_token
         )
-    except RedditClientError:
-        logger.warning("Reddit API failed or credentials missing. Cannot fetch trends.")
+    except RedditClientError as e:
+        logger.warning(f"Failed to fetch trends for r/{subreddit_name}: {e}")
         return PaginatedPostResponse(
             meta_context=build_meta_context(),
             data=[],
             next_page_token=None,
-            status="warning",
+            status="degraded",
             message=(
-                "Trending data is unavailable (OAuth credentials missing or Reddit API "
-                "unreachable) due to archive lag. Please use search tools instead."
+                f"Trending and rising data for r/{subreddit_name} is currently unreachable. "
+                "Verify that the subreddit exists or try again later."
             ),
         )
 

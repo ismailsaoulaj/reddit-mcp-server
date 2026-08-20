@@ -1,5 +1,6 @@
 import logging
 import re
+import time
 from typing import Any
 
 from reddit_mcp.domain.enrichment import (
@@ -26,6 +27,7 @@ class RedditAuthRequiredError(RedditClientError):
 class RedditClient:
     """
     Asynchronous client for interacting with the Reddit API using a resilient HTTP client.
+    Supports multi-tier cascading: Official OAuth -> Guest OAuth -> Public Web JSON.
     """
 
     # Reddit's .json listings never return more than 100 items per request,
@@ -37,10 +39,38 @@ class RedditClient:
     ):
         self.http_client = http_client
         self.search_provider = search_provider
+        self._cache: dict[str, tuple[float, Any]] = {}
+        self._cache_ttl = 180.0  # 3 minutes cache to avoid rate limits
 
     async def close(self):
         """Close underlying resources."""
         await self.http_client.close()
+
+    def _prune_expired_cache(self) -> None:
+        """Prune only expired items from cache instead of wiping everything."""
+        now = time.time()
+        expired_keys = [
+            k for k, (ts, _) in self._cache.items() if (now - ts) >= self._cache_ttl
+        ]
+        for k in expired_keys:
+            self._cache.pop(k, None)
+
+    def _get_from_cache(self, key: str) -> Any | None:
+        if key in self._cache:
+            ts, data = self._cache[key]
+            if time.time() - ts < self._cache_ttl:
+                return data
+            del self._cache[key]
+        return None
+
+    def _set_cache(self, key: str, data: Any) -> None:
+        self._prune_expired_cache()
+        # If still at max capacity after pruning expired items, evict oldest 25% (LRU style)
+        if len(self._cache) >= 200:
+            sorted_keys = sorted(self._cache.keys(), key=lambda k: self._cache[k][0])
+            for old_key in sorted_keys[:50]:
+                self._cache.pop(old_key, None)
+        self._cache[key] = (time.time(), data)
 
     def _map_submission(self, data: dict[str, Any]) -> RedditPost:
         """Map Reddit JSON submission data to our enriched RedditPost model."""
@@ -91,36 +121,54 @@ class RedditClient:
         after: str | None = None,
         before: str | None = None,
     ) -> tuple[list[RedditPost], str | None]:
-        """Fetch trending posts from a subreddit."""
-        if not self.http_client.auth_manager.has_credentials:
-            raise RedditAuthRequiredError("OAuth credentials missing.")
-
+        """Fetch live trending posts from a subreddit using cascading fallback and caching."""
         subreddit = subreddit.strip()
         if subreddit.startswith("/r/"):
             subreddit = subreddit[3:]
         elif subreddit.startswith("r/"):
             subreddit = subreddit[2:]
 
-        url = f"https://oauth.reddit.com/r/{subreddit}/{category}.json"
+        cache_key = f"trends:{subreddit}:{category}:{time_filter}:{limit}:{after}"
+        cached = self._get_from_cache(cache_key)
+        if cached is not None:
+            return cached
+
         params = {"limit": limit, "t": time_filter}
         if after:
             params["after"] = after
         if before:
             params["before"] = before
 
+        data = None
+        # Tier 1: Try OAuth / Guest API
         try:
+            url = f"https://oauth.reddit.com/r/{subreddit}/{category}.json"
             response = await self.http_client.get(url, params=params)
             data = response.json()
+        except Exception as e:  # noqa: BLE001
+            logger.info(
+                f"OAuth/Guest trends fetch failed ({e}); falling back to public web JSON."
+            )
 
-            posts = []
-            for child in data.get("data", {}).get("children", []):
-                if child.get("kind") == "t3":
-                    posts.append(self._map_submission(child["data"]))
+        # Tier 2: Fallback to Public Web JSON
+        if data is None:
+            try:
+                public_url = f"https://old.reddit.com/r/{subreddit}/{category}.json"
+                data = await self.http_client.get_public_web(public_url, params=params)
+            except Exception as e:
+                raise RedditClientError(
+                    f"Error fetching subreddit trends from all tiers: {e}"
+                ) from e
 
-            new_after = data.get("data", {}).get("after")
-            return posts, new_after
-        except Exception as e:
-            raise RedditClientError(f"Error fetching subreddit trends: {e}") from e
+        posts = []
+        for child in data.get("data", {}).get("children", []):
+            if child.get("kind") == "t3":
+                posts.append(self._map_submission(child["data"]))
+
+        new_after = data.get("data", {}).get("after")
+        result = (posts, new_after)
+        self._set_cache(cache_key, result)
+        return result
 
     async def get_post_thread(
         self,
@@ -129,98 +177,98 @@ class RedditClient:
         comment_offset: int = 0,
         after_comment_id: str | None = None,
     ) -> tuple[RedditThread, tuple[int, str] | None]:
-        """Fetch a specific post and its top comments, parsing the comment tree.
-
-        Returns the thread plus the continuation cursor for the next page —
-        the raw-stream offset (for request sizing) and the ID of the last
-        comment served — or None when the raw comment stream is exhausted.
-
-        Continuation anchors to `after_comment_id` (the last-served comment)
-        instead of skipping by count, so a live re-sort between requests can
-        neither duplicate already-served comments nor skip unseen ones after
-        the anchor. If the anchor fell out of the fetched window (heavy
-        re-sort), a RedditClientError is raised rather than silently
-        misaligned pages.
-        """
-        if not self.http_client.auth_manager.has_credentials:
-            raise RedditAuthRequiredError("OAuth credentials missing.")
-
+        """Fetch a specific post and its top comments via cascading fallback and caching."""
         post_id = self._extract_post_id(post_url)
         if not post_id:
             raise RedditClientError("Invalid Reddit post URL provided.")
 
-        url = f"https://oauth.reddit.com/comments/{post_id}.json"
-        # Buffer for 'more' items; offset shifts the window into the raw stream.
-        # Reddit caps limit at 100 server-side; clamping client-side lets us
-        # tell "window was truncated" apart from a genuine re-sort.
+        cache_key = (
+            f"thread:{post_id}:{max_comments}:{comment_offset}:{after_comment_id}"
+        )
+        cached = self._get_from_cache(cache_key)
+        if cached is not None:
+            return cached
+
         requested_limit = max_comments + 20 + comment_offset
         window_clamped = requested_limit > self.MAX_COMMENT_LIMIT
         params = {"limit": min(requested_limit, self.MAX_COMMENT_LIMIT)}
 
+        data = None
+        # Tier 1: Try OAuth / Guest API
         try:
+            url = f"https://oauth.reddit.com/comments/{post_id}.json"
             response = await self.http_client.get(url, params=params)
             data = response.json()
-
-            if not isinstance(data, list) or len(data) < 2:
-                raise RedditClientError("Unexpected response format from Reddit API.")
-
-            post_data = data[0]["data"]["children"][0]["data"]
-            post = self._map_submission(post_data)
-
-            comments = []
-            raw_count = 0
-            anchor_found = after_comment_id is None
-            comment_children = data[1].get("data", {}).get("children", [])
-
-            def parse_comments(children: list[dict[str, Any]]):
-                nonlocal raw_count, anchor_found
-                for child in children:
-                    if len(comments) >= max_comments:
-                        return
-
-                    kind = child.get("kind")
-                    c_data = child.get("data", {})
-
-                    if kind == "t1":  # Comment
-                        if not anchor_found and c_data.get("id") == after_comment_id:
-                            # Everything before the anchor was already served.
-                            anchor_found = True
-                        elif anchor_found:
-                            mapped = self._map_comment(c_data, post.id, post.subreddit)
-                            if mapped:
-                                comments.append(mapped)
-                        raw_count += 1
-
-                        # Recursively parse replies if they exist
-                        replies = c_data.get("replies")
-                        if isinstance(replies, dict):
-                            parse_comments(replies.get("data", {}).get("children", []))
-
-                    elif kind == "more":
-                        # We ignore 'more' comments to avoid excessive API requests.
-                        # This guarantees we only use the comments returned in the initial payload.
-                        continue
-
-            parse_comments(comment_children)
-
-            if not anchor_found:
-                if window_clamped:
-                    # The requested window was truncated by Reddit's per-request
-                    # cap, so the anchor may simply lie beyond what could be
-                    # fetched — a bounded result, not a misalignment error.
-                    return RedditThread(post=post, comments=[]), None
-                raise RedditClientError(
-                    f"Continuation anchor {after_comment_id} not found in the "
-                    "fetched comment window; the live thread was re-sorted past "
-                    "the previous page. Restart pagination without a page_token."
-                )
-
-            next_cursor = (
-                (raw_count, comments[-1].id) if len(comments) >= max_comments else None
+        except Exception as e:  # noqa: BLE001
+            logger.info(
+                f"OAuth/Guest thread fetch failed ({e}); falling back to public web JSON."
             )
-            return RedditThread(post=post, comments=comments), next_cursor
-        except Exception as e:
-            raise RedditClientError(f"Error fetching thread: {e}") from e
+
+        # Tier 2: Fallback to Public Web JSON
+        if data is None or not isinstance(data, list) or len(data) < 2:
+            try:
+                public_url = f"https://old.reddit.com/comments/{post_id}.json"
+                data = await self.http_client.get_public_web(public_url, params=params)
+            except Exception as e:
+                raise RedditClientError(
+                    f"Error fetching thread from all tiers: {e}"
+                ) from e
+
+        if not isinstance(data, list) or len(data) < 2:
+            raise RedditClientError("Unexpected response format from Reddit endpoints.")
+
+        post_data = data[0]["data"]["children"][0]["data"]
+        post = self._map_submission(post_data)
+
+        comments = []
+        raw_count = 0
+        anchor_found = after_comment_id is None
+        comment_children = data[1].get("data", {}).get("children", [])
+
+        def parse_comments(children: list[dict[str, Any]]):
+            nonlocal raw_count, anchor_found
+            for child in children:
+                if len(comments) >= max_comments:
+                    return
+
+                kind = child.get("kind")
+                c_data = child.get("data", {})
+
+                if kind == "t1":  # Comment
+                    if not anchor_found and c_data.get("id") == after_comment_id:
+                        anchor_found = True
+                    elif anchor_found:
+                        mapped = self._map_comment(c_data, post.id, post.subreddit)
+                        if mapped:
+                            comments.append(mapped)
+                    raw_count += 1
+
+                    replies = c_data.get("replies")
+                    if isinstance(replies, dict):
+                        parse_comments(replies.get("data", {}).get("children", []))
+
+                elif kind == "more":
+                    continue
+
+        parse_comments(comment_children)
+
+        if not anchor_found:
+            if window_clamped:
+                result = (RedditThread(post=post, comments=[]), None)
+                self._set_cache(cache_key, result)
+                return result
+            raise RedditClientError(
+                f"Continuation anchor {after_comment_id} not found in the "
+                "fetched comment window; the live thread was re-sorted past "
+                "the previous page. Restart pagination without a page_token."
+            )
+
+        next_cursor = (
+            (raw_count, comments[-1].id) if len(comments) >= max_comments else None
+        )
+        result = (RedditThread(post=post, comments=comments), next_cursor)
+        self._set_cache(cache_key, result)
+        return result
 
     async def native_reddit_search(
         self,
@@ -231,31 +279,52 @@ class RedditClient:
         limit: int = 10,
         after: str | None = None,
     ) -> tuple[list[RedditPost], str | None]:
-        """Search using Reddit's official API. Ideal for metrics like upvote_ratio and native sorting."""
-        if not self.http_client.auth_manager.has_credentials:
-            raise RedditAuthRequiredError("OAuth credentials missing.")
+        """Search using Reddit API / Web JSON with native sorting and pagination."""
+        cache_key = f"search:{query}:{subreddit}:{sort}:{time_filter}:{limit}:{after}"
+        cached = self._get_from_cache(cache_key)
+        if cached is not None:
+            return cached
 
-        url = "https://oauth.reddit.com/search.json"
         params = {"q": query, "sort": sort, "t": time_filter, "limit": limit}
         if subreddit:
-            url = f"https://oauth.reddit.com/r/{subreddit}/search.json"
             params["restrict_sr"] = True
         if after:
             params["after"] = after
 
+        data = None
+        # Tier 1: Try OAuth / Guest API
         try:
+            url = "https://oauth.reddit.com/search.json"
+            if subreddit:
+                url = f"https://oauth.reddit.com/r/{subreddit}/search.json"
             response = await self.http_client.get(url, params=params)
             data = response.json()
+        except Exception as e:  # noqa: BLE001
+            logger.info(
+                f"OAuth/Guest search failed ({e}); falling back to public web JSON."
+            )
 
-            posts = []
-            for child in data.get("data", {}).get("children", []):
-                if child.get("kind") == "t3":
-                    posts.append(self._map_submission(child["data"]))
+        # Tier 2: Fallback to Public Web JSON
+        if data is None:
+            try:
+                public_url = "https://old.reddit.com/search.json"
+                if subreddit:
+                    public_url = f"https://old.reddit.com/r/{subreddit}/search.json"
+                data = await self.http_client.get_public_web(public_url, params=params)
+            except Exception as e:
+                raise RedditClientError(
+                    f"Error during native search from all tiers: {e}"
+                ) from e
 
-            new_after = data.get("data", {}).get("after")
-            return posts, new_after
-        except Exception as e:
-            raise RedditClientError(f"Error during native Reddit search: {e}") from e
+        posts = []
+        for child in data.get("data", {}).get("children", []):
+            if child.get("kind") == "t3":
+                posts.append(self._map_submission(child["data"]))
+
+        new_after = data.get("data", {}).get("after")
+        result = (posts, new_after)
+        self._set_cache(cache_key, result)
+        return result
 
     async def search(
         self,
@@ -268,17 +337,8 @@ class RedditClient:
         before: str | None = None,
     ) -> tuple[list[RedditPost], str | None]:
         """
-        Search Reddit using the injected SearchProvider (e.g. DDG).
-        Useful for general knowledge finding where native search fails.
+        Search Reddit using the injected SearchProvider (e.g. DDG) and resolve post data directly.
         """
-        if not self.http_client.auth_manager.has_credentials:
-            raise RedditAuthRequiredError("OAuth credentials missing.")
-
-        # Fail-fast: Validate OAuth token before performing external web search
-        token = await self.http_client.auth_manager.get_token()
-        if not token:
-            raise RedditAuthRequiredError("OAuth credentials invalid.")
-
         try:
             search_results = await self.search_provider.search(
                 query=query, subreddit=subreddit, time_filter=time_filter, limit=limit
@@ -295,19 +355,44 @@ class RedditClient:
             if not post_ids:
                 return [], None
 
-            url = "https://oauth.reddit.com/api/info.json"
             params = {"id": ",".join(post_ids)}
+            data = None
 
-            response = await self.http_client.get(url, params=params)
-            data = response.json()
+            # Tier 1: Try OAuth / Guest API info.json
+            try:
+                url = "https://oauth.reddit.com/api/info.json"
+                response = await self.http_client.get(url, params=params)
+                data = response.json()
+            except Exception as e:  # noqa: BLE001
+                logger.info(
+                    f"OAuth info.json failed ({e}); attempting public web info."
+                )
 
-            posts = []
-            for child in data.get("data", {}).get("children", []):
-                if child.get("kind") == "t3":
-                    posts.append(self._map_submission(child["data"]))
+            # Tier 2: Fallback to public web info
+            if data is None:
+                try:
+                    public_url = "https://old.reddit.com/api/info.json"
+                    data = await self.http_client.get_public_web(
+                        public_url, params=params
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"Public web info.json failed ({e}).")
 
-            # Search providers like DDG don't natively return Reddit pagination tokens
-            return posts, None
+            if data and "data" in data and "children" in data["data"]:
+                posts = []
+                for child in data["data"]["children"]:
+                    if child.get("kind") == "t3":
+                        posts.append(self._map_submission(child["data"]))
+                return posts, None
+
+            # If info.json is completely blocked, fallback to native search
+            return await self.native_reddit_search(
+                query=query,
+                subreddit=subreddit,
+                sort=sort,
+                time_filter=time_filter,
+                limit=limit,
+            )
 
         except Exception as e:
-            raise RedditClientError(f"Error during web search: {e}") from e
+            raise RedditClientError(f"Error during search resolution: {e}") from e

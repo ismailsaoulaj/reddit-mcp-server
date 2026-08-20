@@ -12,6 +12,7 @@ def mock_http_client():
     client.auth_manager = MagicMock()
     client.auth_manager.has_credentials = True
     client.get = AsyncMock()
+    client.get_public_web = AsyncMock()
     return client
 
 
@@ -341,27 +342,39 @@ async def test_get_post_thread_malformed_json(reddit_client, mock_http_client):
     mock_response = MagicMock()
     mock_response.json.return_value = {"error": 404}
     mock_http_client.get.return_value = mock_response
+    mock_http_client.get_public_web.return_value = {"error": 404}
 
     with pytest.raises(RedditClientError, match="Unexpected response format"):
         await reddit_client.get_post_thread("http://reddit.com/r/test/comments/123")
 
 
-from reddit_mcp.infrastructure.reddit_client import RedditAuthRequiredError
-
-
 @pytest.mark.asyncio
-async def test_reddit_client_auth_required_errors(reddit_client, mock_http_client):
-    # Test that operations fail fast when credentials are missing
-    mock_http_client.auth_manager.has_credentials = False
+async def test_reddit_client_fallback_to_public_web(reddit_client, mock_http_client):
+    # When OAuth API fails, client falls back to get_public_web
+    mock_http_client.get.side_effect = Exception("OAuth endpoint 401")
+    mock_http_client.get_public_web = AsyncMock(
+        return_value={
+            "data": {
+                "children": [
+                    {
+                        "kind": "t3",
+                        "data": {
+                            "id": "fallback_123",
+                            "title": "Fallback Post",
+                            "subreddit": "test",
+                            "score": 25,
+                            "upvote_ratio": 0.9,
+                            "num_comments": 2,
+                            "permalink": "/r/test/comments/fallback_123/",
+                            "created_utc": 1700000000.0,
+                        },
+                    }
+                ]
+            }
+        }
+    )
 
-    with pytest.raises(RedditAuthRequiredError):
-        await reddit_client.get_subreddit_trends("test")
-
-    with pytest.raises(RedditAuthRequiredError):
-        await reddit_client.get_post_thread("http://reddit.com/r/test/comments/123")
-
-    with pytest.raises(RedditAuthRequiredError):
-        await reddit_client.native_reddit_search("query")
-
-    with pytest.raises(RedditAuthRequiredError):
-        await reddit_client.search("query")
+    posts, _ = await reddit_client.get_subreddit_trends("test", "hot")
+    assert len(posts) == 1
+    assert posts[0].id == "fallback_123"
+    mock_http_client.get_public_web.assert_awaited_once()

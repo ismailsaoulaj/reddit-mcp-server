@@ -659,15 +659,16 @@ async def test_extract_public_opinion_old_thread_filters_low_score_comments(
 
 @pytest.mark.asyncio
 async def test_fallback_analyze_niche_trends():
-    # Simulate missing OAuth credentials (subclass of RedditClientError)
+    # Simulate error across all tiers (subclass of RedditClientError)
     mock_reddit = DependencyContainer.get_reddit_client()
-    mock_reddit.get_subreddit_trends.side_effect = RedditAuthRequiredError()
+    mock_reddit.get_subreddit_trends.side_effect = RedditAuthRequiredError(
+        "All tiers failed"
+    )
 
     result = await tools.analyze_niche_trends("python")
 
-    # Trending tool should fail gracefully with a warning
-    assert result.status == "warning"
-    assert "Trending data is unavailable" in result.message
+    assert result.status == "degraded"
+    assert "unreachable" in result.message
     assert len(result.data) == 0
 
 
@@ -678,8 +679,8 @@ async def test_fallback_analyze_niche_trends_on_client_error():
 
     result = await tools.analyze_niche_trends("python")
 
-    assert result.status == "warning"
-    assert "Trending data is unavailable" in result.message
+    assert result.status == "degraded"
+    assert "unreachable" in result.message
     assert len(result.data) == 0
 
 

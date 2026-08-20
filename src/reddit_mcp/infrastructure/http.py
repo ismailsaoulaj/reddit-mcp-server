@@ -4,6 +4,13 @@ from typing import Any
 
 import httpx
 
+try:
+    from curl_cffi.requests import AsyncSession as CurlAsyncSession
+
+    CURL_CFFI_AVAILABLE = True
+except ImportError:
+    CURL_CFFI_AVAILABLE = False
+
 from reddit_mcp.infrastructure.auth import RedditAuthManager
 
 logger = logging.getLogger(__name__)
@@ -29,14 +36,115 @@ class ResilientHTTPClient:
     def __init__(self, auth_manager: RedditAuthManager, user_agent: str):
         self.auth_manager = auth_manager
         self.user_agent = user_agent
-        # httpx timeouts are per network phase, not per request; the aggregate
-        # TOTAL_BUDGET_SECONDS deadline enforced in get() bounds the whole
-        # attempt/retry flow (token fetch is a separate call with its own 10s).
         self.client = httpx.AsyncClient(timeout=httpx.Timeout(5.0))
+        self._curl_session = None
+        if CURL_CFFI_AVAILABLE:
+            try:
+                self._curl_session = CurlAsyncSession(impersonate="chrome")
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Could not initialize curl_cffi session: {e}")
 
     async def close(self):
-        """Close the underlying HTTP client."""
+        """Close underlying HTTP clients."""
         await self.client.aclose()
+        if self._curl_session is not None:
+            try:
+                await self._curl_session.close()
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"Error closing curl session: {e}")
+
+    async def get_public_web(
+        self, url: str, params: dict[str, Any] | None = None, max_retries: int = 2
+    ) -> dict[str, Any]:
+        """
+        Fetch public JSON from old.reddit.com or reddit.com with browser impersonation and retries.
+        Serves as Tier 2 direct fallback when OAuth/Guest API is unavailable.
+        """
+        target_url = url.replace("https://www.reddit.com", "https://old.reddit.com")
+        if (
+            not target_url.startswith("https://old.reddit.com")
+            and "reddit.com" in target_url
+        ):
+            target_url = target_url.replace(
+                "https://reddit.com", "https://old.reddit.com"
+            )
+
+        attempt = 0
+        while attempt < max_retries:
+            # 1. Try curl_cffi if available
+            if self._curl_session is not None:
+                try:
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                        "Accept": "application/json, text/javascript, */*; q=0.01",
+                        "Accept-Language": "en-US,en;q=0.9",
+                    }
+                    res = await self._curl_session.get(
+                        target_url, params=params, headers=headers, timeout=6.0
+                    )
+                    if res.status_code == 200:
+                        return res.json()
+
+                    if res.status_code == 429 or res.status_code >= 500:
+                        retry_after = (
+                            res.headers.get("Retry-After")
+                            if hasattr(res, "headers")
+                            else None
+                        )
+                        wait_seconds = (
+                            min(int(retry_after), self.MAX_RETRY_AFTER_SECONDS)
+                            if (retry_after and retry_after.isdigit())
+                            else (2**attempt)
+                        )
+                        logger.warning(
+                            f"curl_cffi HTTP {res.status_code} on {target_url}. Retrying in {wait_seconds}s..."
+                        )
+                        await asyncio.sleep(wait_seconds)
+                        attempt += 1
+                        continue
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(
+                        f"curl_cffi public web attempt failed for {target_url}: {e}"
+                    )
+
+            # 2. Fallback to standard httpx client with custom UA
+            try:
+                headers = {"User-Agent": self.user_agent}
+                response = await self.client.get(
+                    target_url, params=params, headers=headers
+                )
+                if response.status_code == 200:
+                    return response.json()
+
+                if response.status_code == 429 or response.status_code >= 500:
+                    retry_after = response.headers.get("Retry-After")
+                    wait_seconds = (
+                        min(int(retry_after), self.MAX_RETRY_AFTER_SECONDS)
+                        if (retry_after and retry_after.isdigit())
+                        else (2**attempt)
+                    )
+                    logger.warning(
+                        f"httpx public web HTTP {response.status_code} on {target_url}. Retrying in {wait_seconds}s..."
+                    )
+                    await asyncio.sleep(wait_seconds)
+                    attempt += 1
+                    continue
+
+                response.raise_for_status()
+            except httpx.RequestError as e:
+                logger.warning(f"httpx public web network error on {target_url}: {e}")
+                wait_seconds = 2**attempt
+                await asyncio.sleep(wait_seconds)
+                attempt += 1
+                continue
+            except Exception:
+                raise
+
+            attempt += 1
+
+        raise RedditRateLimitError(
+            f"Failed to fetch public web data after {max_retries} attempts: {target_url}"
+        )
 
     @staticmethod
     def _is_reddit_url(url: str) -> bool:
