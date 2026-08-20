@@ -33,9 +33,10 @@ class ResilientHTTPClient:
     MAX_RETRY_AFTER_SECONDS = 5
     TOTAL_BUDGET_SECONDS = 14.0
 
-    def __init__(self, auth_manager: RedditAuthManager, user_agent: str):
+    def __init__(self, auth_manager: RedditAuthManager, user_agent: str, session_cookie: str | None = None):
         self.auth_manager = auth_manager
         self.user_agent = user_agent
+        self._session_cookie = session_cookie
         self.client = httpx.AsyncClient(timeout=httpx.Timeout(5.0))
         self._curl_session = None
         if CURL_CFFI_AVAILABLE:
@@ -46,6 +47,8 @@ class ResilientHTTPClient:
                     self._curl_session = CurlAsyncSession(impersonate="chrome110")
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"Could not initialize curl_cffi session: {e}")
+        if self._session_cookie:
+            logger.info("Cookie auth mode active. Using reddit_session cookie for requests.")
 
     async def close(self):
         """Close underlying HTTP clients."""
@@ -77,11 +80,37 @@ class ResilientHTTPClient:
         """
         Fetch public JSON from www.reddit.com with browser impersonation and retries.
         Serves as Tier 2 direct fallback when OAuth/Guest API is unavailable.
+        If a session cookie is configured, it is injected as Tier 1.5 before curl_cffi.
         """
         target_url = url.replace("https://oauth.reddit.com", "https://www.reddit.com")
         target_url = target_url.replace(
             "https://old.reddit.com", "https://www.reddit.com"
         )
+
+        # Tier 1.5: Cookie-based auth — bypasses WAF as a real logged-in browser session
+        if self._session_cookie:
+            try:
+                headers = {
+                    **self._get_browser_headers(),
+                    "Cookie": f"reddit_session={self._session_cookie}",
+                }
+                if self._curl_session is not None:
+                    res = await self._curl_session.get(
+                        target_url, params=params, headers=headers, timeout=8.0
+                    )
+                    if res.status_code == 200:
+                        text = res.text.strip()
+                        if text.startswith(("{", "[")):
+                            return res.json()
+                        logger.warning(
+                            f"Cookie auth returned non-JSON for {target_url} (session may be expired)."
+                        )
+                    else:
+                        logger.warning(
+                            f"Cookie auth HTTP {res.status_code} on {target_url}. Falling through."
+                        )
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Cookie auth attempt failed for {target_url}: {e}")
 
         attempt = 0
         while attempt < max_retries:

@@ -104,7 +104,9 @@ class DependencyContainer:
                 user_agent = settings.reddit_user_agent
                 auth_manager = RedditAuthManager(user_agent=user_agent)
                 http_client = ResilientHTTPClient(
-                    auth_manager=auth_manager, user_agent=user_agent
+                    auth_manager=auth_manager,
+                    user_agent=user_agent,
+                    session_cookie=settings.reddit_session_cookie,
                 )
                 search_provider = DuckDuckGoSearchProvider()
                 arctic_shift_client = ArcticShiftClient(http_client=http_client)

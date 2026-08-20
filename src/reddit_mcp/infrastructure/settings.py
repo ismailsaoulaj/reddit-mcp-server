@@ -132,6 +132,14 @@ class AppConfig(BaseSettings):
             "The feed token is the credential — treat it like a password."
         ),
     )
+    reddit_session_cookie: str | None = Field(
+        default=None,
+        description=(
+            "Optional: reddit_session cookie for authenticated requests. "
+            "⚠️ Use a secondary/alt account only. Never use your main account. "
+            "Extract from browser DevTools -> Application -> Cookies -> reddit.com."
+        ),
+    )
 
     model_config = SettingsConfigDict(
         env_file_encoding="utf-8",
