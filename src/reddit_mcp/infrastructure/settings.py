@@ -140,6 +140,18 @@ class AppConfig(BaseSettings):
             "Extract from browser DevTools -> Application -> Cookies -> reddit.com."
         ),
     )
+    reddit_max_concurrency: int = Field(
+        default=4,
+        ge=1,
+        le=20,
+        description="Maximum concurrent outbound HTTP requests to Reddit.",
+    )
+    reddit_rate_limit_per_minute: int = Field(
+        default=40,
+        ge=5,
+        le=120,
+        description="Target maximum requests per minute across all endpoints.",
+    )
 
     model_config = SettingsConfigDict(
         env_file_encoding="utf-8",

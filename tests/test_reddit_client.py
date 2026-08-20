@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -380,3 +381,50 @@ async def test_reddit_client_fallback_to_public_web(reddit_client, mock_http_cli
     assert len(posts) == 1
     assert posts[0].id == "fallback_123"
     mock_http_client.get_public_web.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_reddit_client_singleflight_trends_coalescing(
+    reddit_client, mock_http_client
+):
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "data": {
+            "after": None,
+            "children": [
+                {
+                    "kind": "t3",
+                    "data": {
+                        "id": "sf_1",
+                        "title": "Singleflight Trend Post",
+                        "subreddit": "saas",
+                        "score": 50,
+                        "upvote_ratio": 0.9,
+                        "num_comments": 5,
+                        "permalink": "/r/saas/comments/sf_1/",
+                        "created_utc": 1700000000.0,
+                    },
+                }
+            ],
+        }
+    }
+    mock_http_client.get.return_value = mock_response
+
+    # Clear cache to force network calls
+    reddit_client._cache.clear()
+
+    # Fire 4 identical concurrent calls at the exact same instant
+    results = await asyncio.gather(
+        reddit_client.get_subreddit_trends("saas", "rising"),
+        reddit_client.get_subreddit_trends("saas", "rising"),
+        reddit_client.get_subreddit_trends("saas", "rising"),
+        reddit_client.get_subreddit_trends("saas", "rising"),
+    )
+
+    # All 4 callers receive valid data
+    for posts, _ in results:
+        assert len(posts) == 1
+        assert posts[0].id == "sf_1"
+
+    # The underlying HTTP client should be called ONLY once due to singleflight coalescing
+    assert mock_http_client.get.call_count == 1

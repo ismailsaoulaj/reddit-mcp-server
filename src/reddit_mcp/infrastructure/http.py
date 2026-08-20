@@ -1,8 +1,40 @@
 import asyncio
 import logging
+import random
+import time
 from typing import Any
 
 import httpx
+
+
+class _TokenBucketRateLimiter:
+    """Token bucket rate limiter to prevent burst traffic and enforce safe RPM limits."""
+
+    def __init__(self, rate_limit_per_minute: int):
+        self.capacity = float(rate_limit_per_minute)
+        self.tokens = float(rate_limit_per_minute)
+        self.fill_rate = float(rate_limit_per_minute) / 60.0  # tokens per second
+        self.last_update = time.monotonic()
+        self._lock = asyncio.Lock()
+
+    async def acquire(self) -> None:
+        async with self._lock:
+            now = time.monotonic()
+            elapsed = now - self.last_update
+            self.last_update = now
+            self.tokens = min(self.capacity, self.tokens + (elapsed * self.fill_rate))
+
+            if self.tokens < 1.0:
+                needed = 1.0 - self.tokens
+                wait_time = needed / self.fill_rate
+                # Add subtle jitter (10-50ms) to avoid robotic periodicity
+                jitter = random.uniform(0.01, 0.05)
+                await asyncio.sleep(wait_time + jitter)
+                self.last_update = time.monotonic()
+                self.tokens = 0.0
+            else:
+                self.tokens -= 1.0
+
 
 try:
     from curl_cffi.requests import AsyncSession as CurlAsyncSession
@@ -33,10 +65,19 @@ class ResilientHTTPClient:
     MAX_RETRY_AFTER_SECONDS = 5
     TOTAL_BUDGET_SECONDS = 14.0
 
-    def __init__(self, auth_manager: RedditAuthManager, user_agent: str, session_cookie: str | None = None):
+    def __init__(
+        self,
+        auth_manager: RedditAuthManager,
+        user_agent: str,
+        session_cookie: str | None = None,
+        max_concurrency: int = 4,
+        rate_limit_per_minute: int = 40,
+    ):
         self.auth_manager = auth_manager
         self.user_agent = user_agent
         self._session_cookie = session_cookie
+        self._semaphore = asyncio.Semaphore(max_concurrency)
+        self._rate_limiter = _TokenBucketRateLimiter(rate_limit_per_minute)
         self.client = httpx.AsyncClient(timeout=httpx.Timeout(5.0))
         self._curl_session = None
         if CURL_CFFI_AVAILABLE:
@@ -48,7 +89,9 @@ class ResilientHTTPClient:
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"Could not initialize curl_cffi session: {e}")
         if self._session_cookie:
-            logger.info("Cookie auth mode active. Using reddit_session cookie for requests.")
+            logger.info(
+                "Cookie auth mode active. Using reddit_session cookie for requests."
+            )
 
     async def close(self):
         """Close underlying HTTP clients."""
@@ -82,10 +125,14 @@ class ResilientHTTPClient:
         Serves as Tier 2 direct fallback when OAuth/Guest API is unavailable.
         If a session cookie is configured, it is injected as Tier 1.5 before curl_cffi.
         """
-        target_url = url.replace("https://oauth.reddit.com", "https://www.reddit.com")
-        target_url = target_url.replace(
-            "https://old.reddit.com", "https://www.reddit.com"
-        )
+        async with self._semaphore:
+            await self._rate_limiter.acquire()
+            target_url = url.replace(
+                "https://oauth.reddit.com", "https://www.reddit.com"
+            )
+            target_url = target_url.replace(
+                "https://old.reddit.com", "https://www.reddit.com"
+            )
 
         # Tier 1.5: Cookie-based auth — bypasses WAF as a real logged-in browser session
         if self._session_cookie:
@@ -208,10 +255,14 @@ class ResilientHTTPClient:
         self, url: str, params: dict[str, Any] | None = None
     ) -> str:
         """Fetch raw XML/text from public Reddit endpoints (such as public RSS feeds)."""
-        target_url = url.replace("https://oauth.reddit.com", "https://www.reddit.com")
-        target_url = target_url.replace(
-            "https://old.reddit.com", "https://www.reddit.com"
-        )
+        async with self._semaphore:
+            await self._rate_limiter.acquire()
+            target_url = url.replace(
+                "https://oauth.reddit.com", "https://www.reddit.com"
+            )
+            target_url = target_url.replace(
+                "https://old.reddit.com", "https://www.reddit.com"
+            )
 
         if self._curl_session is not None:
             try:
@@ -253,7 +304,11 @@ class ResilientHTTPClient:
         is_reddit = self._is_reddit_url(url)
         attempt = 0
         auth_retry_done = False
-        async with asyncio.timeout(self.TOTAL_BUDGET_SECONDS):
+        async with (
+            self._semaphore,
+            asyncio.timeout(self.TOTAL_BUDGET_SECONDS),
+        ):
+            await self._rate_limiter.acquire()
             while True:
                 headers = {"User-Agent": self.user_agent}
                 token = await self.auth_manager.get_token() if is_reddit else None

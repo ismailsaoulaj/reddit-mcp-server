@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
@@ -286,4 +287,73 @@ async def test_http_client_total_budget_deadline(mock_auth_manager, monkeypatch)
 
     with pytest.raises(TimeoutError):
         await client.get("https://oauth.reddit.com/test.json")
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_token_bucket_rate_limiter():
+    from reddit_mcp.infrastructure.http import _TokenBucketRateLimiter
+
+    limiter = _TokenBucketRateLimiter(rate_limit_per_minute=60)
+    assert limiter.tokens == 60.0
+
+    # Consume 1 token
+    await limiter.acquire()
+    assert limiter.tokens < 60.0
+
+
+@pytest.mark.asyncio
+async def test_http_client_concurrency_semaphore(mock_auth_manager):
+    client = ResilientHTTPClient(
+        auth_manager=mock_auth_manager,
+        user_agent="test",
+        max_concurrency=2,
+        rate_limit_per_minute=120,
+    )
+
+    in_flight = 0
+    max_seen = 0
+
+    async def mock_get(*args, **kwargs):
+        nonlocal in_flight, max_seen
+        in_flight += 1
+        max_seen = max(max_seen, in_flight)
+        await asyncio.sleep(0.01)
+        in_flight -= 1
+        mock_res = MagicMock()
+        mock_res.status_code = 200
+        return mock_res
+
+    client.client.get = mock_get
+
+    # Fire 6 concurrent requests
+    await asyncio.gather(*[client.get("http://test.com") for _ in range(6)])
+
+    # Max simultaneous requests should never exceed max_concurrency=2
+    assert max_seen <= 2
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_http_client_cookie_auth_success(mock_auth_manager):
+    client = ResilientHTTPClient(
+        auth_manager=mock_auth_manager,
+        user_agent="test",
+        session_cookie="dummy_cookie_val",
+    )
+
+    mock_curl = MagicMock()
+    mock_res = MagicMock()
+    mock_res.status_code = 200
+    mock_res.text = '{"data": {"children": []}}'
+    mock_res.json.return_value = {"data": {"children": []}}
+    mock_curl.get = AsyncMock(return_value=mock_res)
+    client._curl_session = mock_curl
+
+    result = await client.get_public_web("https://www.reddit.com/r/saas/rising.json")
+
+    assert result == {"data": {"children": []}}
+    call_kwargs = mock_curl.get.call_args[1]
+    assert "Cookie" in call_kwargs["headers"]
+    assert call_kwargs["headers"]["Cookie"] == "reddit_session=dummy_cookie_val"
     await client.close()

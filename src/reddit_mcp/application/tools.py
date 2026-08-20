@@ -107,6 +107,8 @@ class DependencyContainer:
                     auth_manager=auth_manager,
                     user_agent=user_agent,
                     session_cookie=settings.reddit_session_cookie,
+                    max_concurrency=settings.reddit_max_concurrency,
+                    rate_limit_per_minute=settings.reddit_rate_limit_per_minute,
                 )
                 search_provider = DuckDuckGoSearchProvider()
                 arctic_shift_client = ArcticShiftClient(http_client=http_client)

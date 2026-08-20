@@ -109,6 +109,24 @@ def test_saved_rss_url_env_override(monkeypatch):
     assert config.reddit_saved_rss_url.endswith("feed=abc&user=x")
 
 
+def test_concurrency_and_rate_limit_defaults():
+    config = AppConfig(_env_file=None)
+    assert config.reddit_max_concurrency == 4
+    assert config.reddit_rate_limit_per_minute == 40
+    assert config.reddit_session_cookie is None
+
+
+def test_concurrency_and_cookie_env_override(monkeypatch):
+    monkeypatch.setenv("REDDIT_MAX_CONCURRENCY", "8")
+    monkeypatch.setenv("REDDIT_RATE_LIMIT_PER_MINUTE", "60")
+    monkeypatch.setenv("REDDIT_SESSION_COOKIE", "secret_session_token")
+
+    config = AppConfig(_env_file=None)
+    assert config.reddit_max_concurrency == 8
+    assert config.reddit_rate_limit_per_minute == 60
+    assert config.reddit_session_cookie == "secret_session_token"
+
+
 _PRINT_UA_SCRIPT = (
     "from reddit_mcp.infrastructure.settings import AppConfig; "
     "print(AppConfig(_env_file=None).reddit_user_agent)"

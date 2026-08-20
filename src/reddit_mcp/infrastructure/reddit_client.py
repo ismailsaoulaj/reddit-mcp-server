@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import time
@@ -51,6 +52,22 @@ class RedditClient:
         self.arctic_shift_client = arctic_shift_client
         self._cache: dict[str, tuple[float, Any]] = {}
         self._cache_ttl = 180.0  # 3 minutes cache to avoid rate limits
+        self._in_flight: dict[str, asyncio.Task] = {}
+
+    async def _singleflight(self, key: str, coro_factory):
+        """
+        Coalesce identical concurrent in-flight requests into a single network call.
+        """
+        if key in self._in_flight:
+            logger.debug(f"Singleflight coalescing concurrent request: {key}")
+            return await asyncio.shield(self._in_flight[key])
+
+        task = asyncio.create_task(coro_factory())
+        self._in_flight[key] = task
+        try:
+            return await task
+        finally:
+            self._in_flight.pop(key, None)
 
     async def close(self):
         """Close underlying resources."""
@@ -183,6 +200,23 @@ class RedditClient:
         if cached is not None:
             return cached
 
+        return await self._singleflight(
+            cache_key,
+            lambda: self._fetch_subreddit_trends_uncached(
+                subreddit, category, time_filter, limit, after, before, cache_key
+            ),
+        )
+
+    async def _fetch_subreddit_trends_uncached(
+        self,
+        subreddit: str,
+        category: str,
+        time_filter: str,
+        limit: int,
+        after: str | None,
+        before: str | None,
+        cache_key: str,
+    ) -> tuple[list[RedditPost], str | None]:
         params = {"limit": limit, "t": time_filter}
         if after:
             params["after"] = after
@@ -280,6 +314,21 @@ class RedditClient:
         if cached is not None:
             return cached
 
+        return await self._singleflight(
+            cache_key,
+            lambda: self._fetch_post_thread_uncached(
+                post_id, max_comments, comment_offset, after_comment_id, cache_key
+            ),
+        )
+
+    async def _fetch_post_thread_uncached(
+        self,
+        post_id: str,
+        max_comments: int,
+        comment_offset: int,
+        after_comment_id: str | None,
+        cache_key: str,
+    ) -> tuple[RedditThread, tuple[int, str] | None]:
         requested_limit = max_comments + 20 + comment_offset
         window_clamped = requested_limit > self.MAX_COMMENT_LIMIT
         params = {"limit": min(requested_limit, self.MAX_COMMENT_LIMIT)}
