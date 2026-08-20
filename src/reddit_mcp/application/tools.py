@@ -107,10 +107,12 @@ class DependencyContainer:
                     auth_manager=auth_manager, user_agent=user_agent
                 )
                 search_provider = DuckDuckGoSearchProvider()
-                reddit_client = RedditClient(
-                    http_client=http_client, search_provider=search_provider
-                )
                 arctic_shift_client = ArcticShiftClient(http_client=http_client)
+                reddit_client = RedditClient(
+                    http_client=http_client,
+                    search_provider=search_provider,
+                    arctic_shift_client=arctic_shift_client,
+                )
                 saved_feed_client = SavedFeedClient(
                     feed_url=settings.reddit_saved_rss_url, user_agent=user_agent
                 )

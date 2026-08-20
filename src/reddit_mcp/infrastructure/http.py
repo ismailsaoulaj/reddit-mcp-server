@@ -40,10 +40,10 @@ class ResilientHTTPClient:
         self._curl_session = None
         if CURL_CFFI_AVAILABLE:
             try:
-                self._curl_session = CurlAsyncSession(impersonate="chrome124")
+                self._curl_session = CurlAsyncSession(impersonate="chrome131")
             except Exception:  # noqa: BLE001
                 try:
-                    self._curl_session = CurlAsyncSession(impersonate="chrome")
+                    self._curl_session = CurlAsyncSession(impersonate="chrome110")
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"Could not initialize curl_cffi session: {e}")
 
@@ -60,17 +60,15 @@ class ResilientHTTPClient:
     def _get_browser_headers() -> dict[str, str]:
         """Generate authentic Chrome browser profile headers to bypass Fastly/Cloudflare WAF."""
         return {
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "Accept": "application/json, text/plain, */*",
             "Accept-Language": "en-US,en;q=0.9",
             "Referer": "https://www.reddit.com/",
-            "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+            "Sec-Ch-Ua": '"Chromium";v="131", "Google Chrome";v="131", "Not-A.Brand";v="24"',
             "Sec-Ch-Ua-Mobile": "?0",
             "Sec-Ch-Ua-Platform": '"Windows"',
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
             "Sec-Fetch-Site": "same-origin",
-            "Sec-Fetch-User": "?1",
-            "Upgrade-Insecure-Requests": "1",
         }
 
     async def get_public_web(
@@ -99,8 +97,16 @@ class ResilientHTTPClient:
                         if text.startswith(("{", "[")):
                             return res.json()
                         logger.warning(
-                            f"curl_cffi received non-JSON response for {target_url}."
+                            f"curl_cffi received non-JSON response for {target_url} (status=200, likely login wall). Falling through to httpx."
                         )
+                        # Do NOT retry curl_cffi — Reddit is serving HTML wall, drop to httpx fallback
+                        break
+
+                    if res.status_code == 403:
+                        logger.warning(
+                            f"curl_cffi HTTP 403 on {target_url}. Reddit blocked the request."
+                        )
+                        break
 
                     if res.status_code == 429 or res.status_code >= 500:
                         retry_after = (
@@ -132,7 +138,7 @@ class ResilientHTTPClient:
                     "Accept-Language": "en-US,en;q=0.9",
                 }
                 response = await self.client.get(
-                    target_url, params=params, headers=headers, follow_redirects=False
+                    target_url, params=params, headers=headers, follow_redirects=True
                 )
                 if response.status_code == 200:
                     text = response.text.strip()

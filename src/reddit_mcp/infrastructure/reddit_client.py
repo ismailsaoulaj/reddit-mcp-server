@@ -41,10 +41,14 @@ class RedditClient:
     MAX_COMMENT_LIMIT = 100
 
     def __init__(
-        self, http_client: ResilientHTTPClient, search_provider: BaseSearchProvider
+        self,
+        http_client: ResilientHTTPClient,
+        search_provider: BaseSearchProvider,
+        arctic_shift_client=None,
     ):
         self.http_client = http_client
         self.search_provider = search_provider
+        self.arctic_shift_client = arctic_shift_client
         self._cache: dict[str, tuple[float, Any]] = {}
         self._cache_ttl = 180.0  # 3 minutes cache to avoid rate limits
 
@@ -219,7 +223,7 @@ class RedditClient:
             self._set_cache(cache_key, result)
             return result
 
-        # Tier 3: Fallback to Public RSS Feed (Never blocked by lor2 login wall)
+        # Tier 3: Fallback to Public RSS Feed (Never blocked by login wall)
         try:
             rss_url = f"https://www.reddit.com/r/{subreddit}/{category}.rss"
             xml_text = await self.http_client.get_public_text(
@@ -232,7 +236,24 @@ class RedditClient:
                 if parsed_post:
                     rss_posts.append(parsed_post)
 
-            result = (rss_posts[:limit], None)
+            rss_posts = rss_posts[:limit]
+
+            # Enrich RSS posts with scores/comment counts from Arctic Shift
+            if rss_posts and self.arctic_shift_client is not None:
+                try:
+                    post_ids = [p.id for p in rss_posts]
+                    enriched = await self.arctic_shift_client.get_posts_by_ids(post_ids)
+                    enriched_map = {p.id: p for p in enriched}
+                    rss_posts = [enriched_map.get(p.id, p) for p in rss_posts]
+                    logger.info(
+                        f"RSS enriched {len(enriched_map)}/{len(rss_posts)} posts via Arctic Shift."
+                    )
+                except Exception as enrich_err:  # noqa: BLE001
+                    logger.warning(
+                        f"Arctic Shift enrichment failed (scores will be 0): {enrich_err}"
+                    )
+
+            result = (rss_posts, None)
             self._set_cache(cache_key, result)
             return result
         except Exception as e:
