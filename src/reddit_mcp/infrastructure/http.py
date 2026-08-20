@@ -40,9 +40,12 @@ class ResilientHTTPClient:
         self._curl_session = None
         if CURL_CFFI_AVAILABLE:
             try:
-                self._curl_session = CurlAsyncSession(impersonate="chrome")
-            except Exception as e:  # noqa: BLE001
-                logger.warning(f"Could not initialize curl_cffi session: {e}")
+                self._curl_session = CurlAsyncSession(impersonate="chrome124")
+            except Exception:  # noqa: BLE001
+                try:
+                    self._curl_session = CurlAsyncSession(impersonate="chrome")
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"Could not initialize curl_cffi session: {e}")
 
     async def close(self):
         """Close underlying HTTP clients."""
@@ -52,6 +55,23 @@ class ResilientHTTPClient:
                 await self._curl_session.close()
             except Exception as e:  # noqa: BLE001
                 logger.debug(f"Error closing curl session: {e}")
+
+    @staticmethod
+    def _get_browser_headers() -> dict[str, str]:
+        """Generate authentic Chrome browser profile headers to bypass Fastly/Cloudflare WAF."""
+        return {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.reddit.com/",
+            "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1",
+        }
 
     async def get_public_web(
         self, url: str, params: dict[str, Any] | None = None, max_retries: int = 2
@@ -67,23 +87,19 @@ class ResilientHTTPClient:
 
         attempt = 0
         while attempt < max_retries:
-            # 1. Try curl_cffi if available (bypasses bot protection)
+            # 1. Try curl_cffi if available (bypasses bot protection via full browser emulation)
             if self._curl_session is not None:
                 try:
-                    headers = {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,application/json,*/*;q=0.8",
-                        "Accept-Language": "en-US,en;q=0.9",
-                    }
+                    headers = self._get_browser_headers()
                     res = await self._curl_session.get(
-                        target_url, params=params, headers=headers, timeout=6.0
+                        target_url, params=params, headers=headers, timeout=8.0
                     )
                     if res.status_code == 200:
                         text = res.text.strip()
                         if text.startswith(("{", "[")):
                             return res.json()
                         logger.warning(
-                            f"curl_cffi received HTML instead of JSON for {target_url}."
+                            f"curl_cffi received non-JSON response for {target_url}."
                         )
 
                     if res.status_code == 429 or res.status_code >= 500:
@@ -108,9 +124,13 @@ class ResilientHTTPClient:
                         f"curl_cffi public web attempt failed for {target_url}: {e}"
                     )
 
-            # 2. Fallback to standard httpx client with custom UA
+            # 2. Fallback to standard httpx client with browser-aligned headers
             try:
-                headers = {"User-Agent": self.user_agent}
+                headers = {
+                    "User-Agent": self.user_agent,
+                    "Accept": "application/json, text/plain, */*",
+                    "Accept-Language": "en-US,en;q=0.9",
+                }
                 response = await self.client.get(
                     target_url, params=params, headers=headers, follow_redirects=False
                 )
