@@ -259,3 +259,13 @@ For architectural guidance, see [`docs/architecture.md`](docs/architecture.md).
 To add a custom search provider, see [`src/reddit_mcp/infrastructure/search/providers/README.md`](src/reddit_mcp/infrastructure/search/providers/README.md).
 
 Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) before submitting.
+
+## 👥 Contributors & Special Thanks
+
+A huge thank you to everyone who helps make the **Reddit MCP Server** better!
+
+<a href="https://github.com/ismailsaoulaj/reddit-mcp-server/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=ismailsaoulaj/reddit-mcp-server" />
+</a>
+
+- **[@brianluby](https://github.com/brianluby)** — Major contributions to core architecture, security hardening, and resilience engineering.
