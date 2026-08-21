@@ -2,19 +2,20 @@ import logging
 import sys
 
 
-def setup_logging(level: int = logging.INFO) -> None:
+def setup_logging(transport_mode: str = "stdio", level: int = logging.INFO) -> None:
     """
-    Configures the root logger to output strictly to stderr.
+    Configures the root logger based on the transport mode.
 
-    This is a critical requirement for MCP servers using standard I/O transport.
-    If logs are written to stdout, they will corrupt the JSON-RPC communication
-    between the MCP server and the client.
+    For 'stdio', logs strictly to stderr to prevent JSON-RPC corruption.
+    For 'sse' (HTTP), logs to stdout for standard Docker/service compatibility.
 
     Args:
+        transport_mode: The MCP transport mode ('stdio' or 'sse')
         level: The logging level to set (e.g., logging.INFO, logging.DEBUG)
     """
-    # Create a handler that writes exclusively to stderr
-    handler = logging.StreamHandler(sys.stderr)
+    # Choose the appropriate stream based on the transport mode
+    stream = sys.stdout if transport_mode.lower() == "sse" else sys.stderr
+    handler = logging.StreamHandler(stream)
 
     # Define a clear format for the logs
     formatter = logging.Formatter(
