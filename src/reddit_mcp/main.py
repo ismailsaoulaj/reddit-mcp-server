@@ -15,7 +15,9 @@ def main():
     This script initializes the appropriate logging configuration,
     sets up the server, and starts the selected transport (STDIO or SSE).
     """
-    parser = argparse.ArgumentParser(description="Reddit MCP Server (AI-Native Edition)")
+    parser = argparse.ArgumentParser(
+        description="Reddit MCP Server (AI-Native Edition)"
+    )
     parser.add_argument(
         "--transport",
         choices=["stdio", "sse"],
@@ -50,7 +52,9 @@ def main():
             logger.info(f"Starting SSE transport on http://{args.host}:{args.port}")
             mcp.run(transport="sse", host=args.host, port=args.port)
         else:
-            logger.info("Starting STDIO transport loop. Listening for JSON-RPC messages.")
+            logger.info(
+                "Starting STDIO transport loop. Listening for JSON-RPC messages."
+            )
             mcp.run(transport="stdio")
 
     except KeyboardInterrupt:
@@ -64,7 +68,9 @@ def main():
             asyncio.run(DependencyContainer.aclose())
         except RuntimeError as loop_error:
             # Expected if the ASGI server already closed the event loop where clients were attached
-            if "Event loop is closed" not in str(loop_error) and "different loop" not in str(loop_error):
+            if "Event loop is closed" not in str(
+                loop_error
+            ) and "different loop" not in str(loop_error):
                 logger.error(f"Runtime error during cleanup: {loop_error}")
         except Exception as cleanup_error:  # noqa: BLE001
             logger.error(f"Error during cleanup: {cleanup_error}")
