@@ -47,3 +47,35 @@ or harmful.
 
 This Code of Conduct applies within all community spaces, and also applies when
 an individual is officially representing the community in public spaces.
+Examples of representing our community include using an official e-mail address,
+posting via an official social media account, or acting as an appointed
+representative at an online or offline event.
+
+## Enforcement
+
+Instances of abusive, harassing, or otherwise unacceptable behavior may be
+reported by opening a [GitHub Security Advisory](https://github.com/ismailsaoulaj/reddit-mcp-server/security/advisories/new)
+for privacy, or by contacting the maintainers directly via GitHub.
+
+All complaints will be reviewed and investigated promptly and fairly. Community
+leaders are obligated to respect the privacy and security of the reporter.
+
+## Enforcement Guidelines
+
+Community leaders will follow these guidelines when determining consequences:
+
+**1. Correction** — Private written warning for minor, unintentional incidents.
+
+**2. Warning** — A formal warning with consequences for continued behavior.
+No interaction with the people involved for a specified period.
+
+**3. Temporary Ban** — Temporary removal from all community interaction and
+public communication channels for a serious violation.
+
+**4. Permanent Ban** — Permanent removal for repeated violations, harassment,
+or sustained disruptive behavior.
+
+## Attribution
+
+This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org/),
+version 2.1, available at https://www.contributor-covenant.org/version/2/1/code_of_conduct.html.

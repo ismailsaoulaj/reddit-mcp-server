@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-08-21 - HTTP/SSE Transport & Docker Microservice Mode
+
+This release fundamentally expands the server's reach by introducing Server-Sent Events (SSE) and HTTP transport support. It transforms the Reddit MCP Server from a local-only CLI tool into a fully deployable microservice, enabling seamless integration with web-based platforms like **Open WebUI**, **Dify**, and remote Docker environments.
+
+### Added
+- **SSE Transport Mode:** New `--transport sse` CLI flag to run the server as a continuous HTTP service.
+- **Network Binding Flags:** Added `--host` and `--port` CLI arguments for fine-grained network control.
+- **Docker Microservice Ready:** The `Dockerfile` now exposes port `8000` and runs in SSE mode by default, making deployment instant.
+- **Dynamic Logging Routing:** Logs are intelligently routed to `sys.stderr` when in STDIO mode (to protect JSON-RPC integrity) and `sys.stdout` in SSE mode for standard Docker observability.
+- **Graceful Asyncio Cleanup:** Added handling to ensure the internal ASGI (Uvicorn) event loop shuts down cleanly without throwing `RuntimeError` on exit.
+
 ## [0.4.0] - 2026-08-20 - Resilient Multi-Tier Engine & Anti-Ban Shields
 
 This release introduces the high-availability **Cascading Multi-Tier Engine**, sub-second **Cookie Authentication**, and built-in **Protective Shields** (Rate Limiting, Concurrency Semaphore, and Singleflight Coalescing) to prevent WAF 403 blocks and IP bans under heavy AI traffic.
@@ -200,6 +211,7 @@ to 82 tests, and CI now runs locked, reproducible resolution.
 - Strict stderr logging to keep the STDIO JSON-RPC stream clean.
 - 4-layer architecture (domain / infrastructure / application / interface).
 
+[0.5.0]: https://github.com/ismailsaoulaj/reddit-mcp-server/releases/tag/v0.5.0
 [0.4.0]: https://github.com/ismailsaoulaj/reddit-mcp-server/releases/tag/v0.4.0
 [0.3.2]: https://github.com/ismailsaoulaj/reddit-mcp-server/releases/tag/v0.3.2
 [0.3.1]: https://github.com/ismailsaoulaj/reddit-mcp-server/releases/tag/v0.3.1
