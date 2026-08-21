@@ -32,4 +32,4 @@ EXPOSE 8000
 
 # Set entrypoint to run the server in SSE mode by default inside the container.
 # Binding to 0.0.0.0 is required for Docker port forwarding to work.
-ENTRYPOINT ["reddit-mcp", "--transport", "sse", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["reddit-mcp", "--transport", "http", "--host", "0.0.0.0", "--port", "8000"]

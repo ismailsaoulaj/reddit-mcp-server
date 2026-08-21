@@ -14,7 +14,7 @@ def setup_logging(transport_mode: str = "stdio", level: int = logging.INFO) -> N
         level: The logging level to set (e.g., logging.INFO, logging.DEBUG)
     """
     # Choose the appropriate stream based on the transport mode
-    stream = sys.stdout if transport_mode.lower() == "sse" else sys.stderr
+    stream = sys.stdout if transport_mode.lower() in ("sse", "http") else sys.stderr
     handler = logging.StreamHandler(stream)
 
     # Define a clear format for the logs

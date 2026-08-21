@@ -115,7 +115,7 @@ class AppConfig(BaseSettings):
     """
 
     mcp_transport: str = Field(
-        default="stdio", description="Transport mode: 'stdio' or 'sse'"
+        default="stdio", description="Transport mode: 'stdio', 'sse', or 'http'"
     )
     mcp_host: str = Field(
         default="127.0.0.1", description="Host to bind for SSE transport"

@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-08-21 - Native Open WebUI & Streamable HTTP Support
+
+### Added
+- **Streamable HTTP Transport (`--transport http`):** Added native support for MCP Streamable HTTP on `/mcp`, resolving compatibility with modern web-based AI clients (Open WebUI, Dify).
+- **Docker Default to Streamable HTTP:** Configured the `Dockerfile` entrypoint to run `--transport http` by default on `0.0.0.0:8000`.
+
+### Fixed
+- **Open WebUI 405/404 Handshake:** Resolved `405 Method Not Allowed` and `404 Not Found` when web clients submit `POST /mcp` payloads during tool discovery.
+
 ## [0.5.0] - 2026-08-21 - HTTP/SSE Transport & Docker Microservice Mode
 
 This release fundamentally expands the server's reach by introducing Server-Sent Events (SSE) and HTTP transport support. It transforms the Reddit MCP Server from a local-only CLI tool into a fully deployable microservice, enabling seamless integration with web-based platforms like **Open WebUI**, **Dify**, and remote Docker environments.
@@ -211,6 +220,7 @@ to 82 tests, and CI now runs locked, reproducible resolution.
 - Strict stderr logging to keep the STDIO JSON-RPC stream clean.
 - 4-layer architecture (domain / infrastructure / application / interface).
 
+[0.5.1]: https://github.com/ismailsaoulaj/reddit-mcp-server/releases/tag/v0.5.1
 [0.5.0]: https://github.com/ismailsaoulaj/reddit-mcp-server/releases/tag/v0.5.0
 [0.4.0]: https://github.com/ismailsaoulaj/reddit-mcp-server/releases/tag/v0.4.0
 [0.3.2]: https://github.com/ismailsaoulaj/reddit-mcp-server/releases/tag/v0.3.2

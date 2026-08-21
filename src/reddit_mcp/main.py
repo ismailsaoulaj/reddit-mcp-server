@@ -20,7 +20,7 @@ def main():
     )
     parser.add_argument(
         "--transport",
-        choices=["stdio", "sse"],
+        choices=["stdio", "sse", "http"],
         default="stdio",
         help="Transport mode to use (default: stdio)",
     )
@@ -48,8 +48,13 @@ def main():
         mcp = create_server()
 
         # 3. Start the selected transport loop.
-        if args.transport == "sse":
-            logger.info(f"Starting SSE transport on http://{args.host}:{args.port}")
+        if args.transport == "http":
+            logger.info(
+                f"Starting Streamable HTTP transport on http://{args.host}:{args.port}/mcp"
+            )
+            mcp.run(transport="http", host=args.host, port=args.port)
+        elif args.transport == "sse":
+            logger.info(f"Starting SSE transport on http://{args.host}:{args.port}/sse")
             mcp.run(transport="sse", host=args.host, port=args.port)
         else:
             logger.info(

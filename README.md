@@ -87,8 +87,8 @@ You can run this server directly without installation using `uvx` (recommended) 
 # Run locally (STDIO mode) for Cursor/Claude
 uvx reddit-mcp-ai
 
-# OR run as a background service (SSE mode) for Web UIs
-uvx reddit-mcp-ai --transport sse --host 0.0.0.0 --port 8000
+# OR run as a background service (Streamable HTTP mode) for Open WebUI / Web clients
+uvx reddit-mcp-ai --transport http --host 0.0.0.0 --port 8000
 ```
 
 **Configure your environment (Optional):**
@@ -205,11 +205,11 @@ Go to **Settings > Features > MCP** and add a new command-based server:
 
 ### 3. Open WebUI (and other Web Clients)
 
-When running the server via Docker or in SSE mode:
+When running the server via Docker or in Streamable HTTP mode:
 1. Go to **Admin Panel > Settings > External Connections / Tools**.
 2. Add a new MCP Server.
-3. **Type:** `SSE`
-4. **URL:** `http://localhost:8000/sse` *(Use `http://host.docker.internal:8000/sse` if Open WebUI is also running in Docker).*
+3. **Type:** `MCP (Streamable HTTP)`
+4. **URL:** `http://localhost:8000/mcp` *(Use `http://host.docker.internal:8000/mcp` if Open WebUI is also running in Docker).*
 
 ---
 
