@@ -114,6 +114,20 @@ def test_concurrency_and_rate_limit_defaults():
     assert config.reddit_max_concurrency == 4
     assert config.reddit_rate_limit_per_minute == 40
     assert config.reddit_session_cookie is None
+    assert config.mcp_transport == "stdio"
+    assert config.mcp_host == "127.0.0.1"
+    assert config.mcp_port == 8000
+
+
+def test_transport_settings_env_override(monkeypatch):
+    monkeypatch.setenv("MCP_TRANSPORT", "sse")
+    monkeypatch.setenv("MCP_HOST", "0.0.0.0")
+    monkeypatch.setenv("MCP_PORT", "9000")
+
+    config = AppConfig(_env_file=None)
+    assert config.mcp_transport == "sse"
+    assert config.mcp_host == "0.0.0.0"
+    assert config.mcp_port == 9000
 
 
 def test_concurrency_and_cookie_env_override(monkeypatch):

@@ -6,15 +6,32 @@ Currently, only the latest release of the Reddit MCP Server is supported with se
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.1.x   | :white_check_mark: |
-| < 0.1   | :x:                |
+| 0.5.x   | :white_check_mark: |
+| 0.4.x   | :white_check_mark: |
+| < 0.4   | :x:                |
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability within this project, please do not disclose it publicly. 
+**Please do not open a public GitHub issue for security vulnerabilities.**
 
-Instead, please send an email to the repository owner or use the GitHub Security Advisories feature to privately report the issue. We will strive to respond within 48 hours and release a patch as quickly as possible.
+Use [GitHub Security Advisories](https://github.com/ismailsaoulaj/reddit-mcp-server/security/advisories/new) to report privately. We will acknowledge your report within 48 hours and aim to release a patch within 7 days for confirmed issues.
+
+When reporting, please include:
+- A description of the vulnerability and its potential impact
+- Steps to reproduce or a proof-of-concept
+- Any suggested mitigations, if known
+
+## Scope
+
+The following are in scope for vulnerability reports:
+
+- Authentication bypass or credential leakage (e.g. OAuth tokens, session cookies, RSS feed tokens)
+- Server-Side Request Forgery (SSRF) via user-controlled URLs (e.g. `REDDIT_SAVED_RSS_URL`)
+- Denial of service via unbounded resource consumption in the rate limiter or concurrency semaphore
+- Secrets exposed through logs or error messages
+
+The following are **out of scope**: bugs in third-party dependencies (report those upstream), Reddit API behavior outside our control, and issues that require physical access to the machine.
 
 ## Secret Scanning
 
-This repository utilizes GitHub's native Secret Scanning. Please ensure you do not commit any personal API keys, Reddit app credentials, or tokens. If a secret is accidentally pushed, GitHub will notify you. However, you should consider any pushed secret compromised and revoke it immediately.
+This repository uses GitHub's native Secret Scanning. Never commit API keys, Reddit credentials, session cookies, or RSS feed tokens. If a secret is accidentally pushed, consider it compromised immediately and revoke it — GitHub's notification may not arrive in time.

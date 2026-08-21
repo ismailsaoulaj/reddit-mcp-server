@@ -1,13 +1,19 @@
-# 🤖 Reddit MCP Server (AI-Native Edition)
+# Reddit MCP Server
+
+> Give your AI assistant a live, structured window into Reddit — zero API keys required.
 
 [![CI Status](https://github.com/ismailsaoulaj/reddit-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/ismailsaoulaj/reddit-mcp-server/actions)
+[![PyPI version](https://img.shields.io/pypi/v/reddit-mcp-ai.svg)](https://pypi.org/project/reddit-mcp-ai/)
 [![Python Version](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Zero Config](https://img.shields.io/badge/Setup-Zero_Config-success.svg)](#-prerequisites--setup)
+[![Zero Config](https://img.shields.io/badge/Setup-Zero_Config-success.svg)](#️-prerequisites--setup)
 
-A highly resilient, open-source [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server. It empowers AI models (such as Claude and Cursor) to search, fetch, read, and deep-dive into Reddit content with robust rate-limiting recovery and smart comment-filtering.
+**Reddit MCP Server** is an open-source [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that connects AI assistants (Claude, Cursor, Open WebUI, and more) to Reddit's content in real time. It provides structured tools for searching discussions, extracting community opinions, and tracking niche trends — with a resilient multi-tier fallback engine that works even without any credentials.
 
-Built in Python using `FastMCP`, this project adheres to a strict **4-Layer Architecture** designed for high modularity, testability, and painless contributions.
+```bash
+# Get started in one command — no sign-up, no API keys
+uvx reddit-mcp-ai
+```
 
 ---
 
@@ -44,12 +50,13 @@ sequenceDiagram
 
 ## ✨ Features
 
-- 🚀 **Zero-Config Ready:** Works completely out of the box! No Reddit API keys required. If credentials are not provided, it seamlessly falls back to DuckDuckGo and the Arctic Shift archive.
-- 🛡️ **Graceful Degradation:** Intelligently switches between the official Reddit API and unauthenticated fallback providers without crashing, ensuring the LLM always gets data.
-- 📈 **Resilient HTTP Client:** Built-in exponential backoff and rate-limiting recovery. If Reddit says `429 Too Many Requests`, the server respects the `Retry-After` header and retries automatically.
-- 🔍 **Strategic Search:** Integrates a decoupled search provider system (Strategy Pattern) allowing easy addition of custom search engines.
-- 🤖 **LLM-Safe Filtering:** Cleans thread payloads by dropping auto-moderators, bot notifications, and low-quality comments, saving precious LLM token costs.
-- ⏱️ **Strict LLM Timeout Protection:** Uses decorators to force safe API timeouts, returning clean graceful JSON-RPC fallbacks instead of hanging the AI client.
+- 🚀 **Zero-Config Ready:** Works completely out of the box. No Reddit API keys required — it falls back automatically to DuckDuckGo and the Arctic Shift archive.
+- 🛡️ **Cascading Multi-Tier Engine:** `Official OAuth` → `Session Cookie` → `Browser-Impersonated JSON` → `Arctic Shift RSS` → `DDG`. The AI always gets data, even when Reddit is rate-limiting or credentials are missing.
+- 🚦 **Built-in Anti-Ban Shields:** Token bucket rate limiter, global concurrency semaphore, and singleflight request coalescing prevent WAF 403 blocks and IP bans under heavy AI traffic.
+- � **Resilient HTTP Client:** Exponential backoff with `Retry-After` respect, a bounded 14-second aggregate deadline, and automatic OAuth token self-healing on mid-flight 401s.
+- 🤖 **LLM-Safe Filtering:** Drops AutoModerator, bots, and low-signal comments before they reach the model — saving tokens and reducing noise.
+- ⏱️ **Strict Timeout Protection:** Decorator-enforced timeouts return clean JSON-RPC fallbacks instead of hanging the AI client.
+- 🌐 **STDIO & SSE Transport:** Runs as a local CLI tool for Claude/Cursor or as a Docker microservice on port `8000` for Open WebUI, LibreChat, and n8n.
 
 ---
 
@@ -77,12 +84,14 @@ sequenceDiagram
 You can run this server directly without installation using `uvx` (recommended) or `pipx`:
 
 ```bash
+# Run locally (STDIO mode) for Cursor/Claude
 uvx reddit-mcp-ai
-# OR
-pipx run reddit-mcp-ai
+
+# OR run as a background service (SSE mode) for Web UIs
+uvx reddit-mcp-ai --transport sse --host 0.0.0.0 --port 8000
 ```
 
-2. **Configure your environment (Optional):**
+**Configure your environment (Optional):**
 
 To unlock the official Reddit API, Cookie Authentication, or Saved Posts, you can either inject environment variables via your MCP client config, or create a global configuration file at `~/.config/reddit-mcp-server/.env` (Mac/Linux) or `%APPDATA%\reddit-mcp-server\.env` (Windows):
 
@@ -114,13 +123,33 @@ While logged in, open **[reddit.com/prefs/feeds/](https://www.reddit.com/prefs/f
 
 ## 🐳 Docker Installation
 
-A multi-stage Dockerfile is provided for seamless execution.
+A multi-stage Dockerfile is provided. The container is configured to run in **SSE (HTTP) mode by default** on port `8000`, making it a perfect microservice.
 
 ```bash
+# Build the image
 docker build -t reddit-mcp-server .
+
+# Run it in the background
+docker run -d -p 8000:8000 --name reddit-mcp reddit-mcp-server
 ```
 
-> **Note:** If using Docker, replace the `command` in client configs with `docker` and arguments with `run -i --rm reddit-mcp-server`.
+### Docker Compose Example
+
+```yaml
+services:
+  reddit-mcp:
+    build: .
+    container_name: reddit-mcp
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    environment:
+      # Optional Configuration
+      - REDDIT_CLIENT_ID=your_id_optional
+      - REDDIT_CLIENT_SECRET=your_secret_optional
+```
+
+> **Note:** If using Docker with STDIO mode, replace the command in client configs with `docker` and arguments with `run -i --rm reddit-mcp-server`.
 
 ---
 
@@ -174,6 +203,14 @@ Go to **Settings > Features > MCP** and add a new command-based server:
 - **Command:** `uvx reddit-mcp-ai`
 - **Env:** (Optional) Add `REDDIT_SAVED_RSS_URL` and your feed link here if you want to use the saved posts feature.
 
+### 3. Open WebUI (and other Web Clients)
+
+When running the server via Docker or in SSE mode:
+1. Go to **Admin Panel > Settings > External Connections / Tools**.
+2. Add a new MCP Server.
+3. **Type:** `SSE`
+4. **URL:** `http://localhost:8000/sse` *(Use `http://host.docker.internal:8000/sse` if Open WebUI is also running in Docker).*
+
 ---
 
 ## 🧪 Developer Experience (DX) & Testing
@@ -183,11 +220,14 @@ We prioritize high test coverage. We mock all network traffic, ensuring tests ru
 ### Run Tests
 
 ```bash
-# Install development dependencies
+# Install development dependencies (using uv — recommended)
+uv sync --locked --extra dev
+
+# Or with pip
 pip install -e ".[dev]"
 
 # Execute pytest
-pytest tests/
+uv run pytest tests/
 ```
 
 ### Manual Testing with the MCP Inspector
@@ -200,8 +240,22 @@ This will launch a web browser UI where you can invoke the `search_knowledge`, `
 
 ---
 
-## 🤝 Contributing & Architecture
+## 🤝 Contributing
 
-We love contributions! Please check out `docs/architecture.md` for architectural details and view `src/reddit_mcp/infrastructure/search/providers/README.md` to learn how to add a new search provider in seconds.
+Contributions are welcome! Here's how to get started:
 
-Please make sure your PR passes all linter checks (`ruff check .`) and unit tests (`pytest tests/`) before submitting.
+1. Fork the repository and clone your fork.
+2. Install dependencies: `uv sync --locked --extra dev`
+3. Create a branch: `git checkout -b feature/your-feature-name`
+4. Make your changes, then lint and test:
+```bash
+   uv run ruff check .
+   uv run ruff format .
+   uv run pytest tests/
+```
+5. Open a pull request — CI will run automatically.
+
+For architectural guidance, see [`docs/architecture.md`](docs/architecture.md).
+To add a custom search provider, see [`src/reddit_mcp/infrastructure/search/providers/README.md`](src/reddit_mcp/infrastructure/search/providers/README.md).
+
+Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) before submitting.

@@ -114,6 +114,14 @@ class AppConfig(BaseSettings):
     Validates environment variables at startup (Fail-Fast).
     """
 
+    mcp_transport: str = Field(
+        default="stdio", description="Transport mode: 'stdio' or 'sse'"
+    )
+    mcp_host: str = Field(
+        default="127.0.0.1", description="Host to bind for SSE transport"
+    )
+    mcp_port: int = Field(default=8000, description="Port to bind for SSE transport")
+
     reddit_client_id: str | None = Field(
         default=None, description="Reddit App Client ID"
     )

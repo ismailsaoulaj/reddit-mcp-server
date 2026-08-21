@@ -1,43 +1,71 @@
 # Contributing to Reddit MCP Server
 
-First off, thanks for taking the time to contribute!
+Thanks for taking the time to contribute! This document covers everything you need to go from zero to a merged pull request.
 
-The following is a set of guidelines for contributing to this project. These are mostly guidelines, not rules. Use your best judgment, and feel free to propose changes to this document in a pull request.
+## Table of Contents
+
+- [Development Setup](#development-setup)
+- [Workflow](#workflow)
+- [Pull Request Process](#pull-request-process)
+- [Adding a Search Provider](#adding-a-search-provider)
+- [Code of Conduct](#code-of-conduct)
 
 ## Development Setup
 
-1. **Fork the repository** and clone your fork locally.
-2. **Install Python 3.11+**.
-3. **Install dependencies** including development tools:
-   ```bash
-   pip install -e ".[dev]"
-   ```
-4. **Familiarize yourself with the architecture**: Read `docs/architecture.md`.
+**Requirements:** Python 3.11+, [`uv`](https://docs.astral.sh/uv/) (recommended)
+
+```bash
+# 1. Fork the repo on GitHub, then clone your fork
+git clone https://github.com/YOUR_USERNAME/reddit-mcp-server.git
+cd reddit-mcp-server
+
+# 2. Install all dependencies (including dev tools) from the lockfile
+uv sync --locked --extra dev
+
+# 3. Verify everything works
+uv run pytest tests/
+```
+
+> **No `uv`?** You can use `pip install -e ".[dev]"` instead, but the CI runs against the locked dependency set (`uv.lock`), so results may differ.
+
+Read [`docs/architecture.md`](docs/architecture.md) to understand the 4-layer structure before making changes.
 
 ## Workflow
 
-1. Create a branch for your feature or bug fix: `git checkout -b feature/my-new-feature`
-2. Make your changes.
-3. Ensure your code passes linting and formatting:
-   ```bash
-   ruff check .
-   ruff format .
-   ```
-4. Run the tests to ensure you haven't broken anything:
-   ```bash
-   pytest tests/
-   ```
-5. Commit your changes: `git commit -am 'Add some feature'`
-6. Push to the branch: `git push origin feature/my-new-feature`
-7. Submit a pull request.
+```bash
+# 1. Create a focused branch
+git checkout -b feature/my-new-feature   # or fix/issue-123
+
+# 2. Make your changes, then check lint and formatting
+uv run ruff check .
+uv run ruff format .
+
+# 3. Run the full test suite (all tests are mocked — no network required)
+uv run pytest tests/
+
+# 4. Commit with a clear message
+git commit -m "feat: add X" -m "Fixes #123"
+
+# 5. Push and open a PR
+git push origin feature/my-new-feature
+```
+
+Commit messages should follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, `chore:`, etc.).
 
 ## Pull Request Process
 
-1. Ensure your PR description clearly describes the problem and solution.
-2. If your PR changes behavior, ensure you have updated the tests.
-3. Your PR will be automatically tested and linted by GitHub Actions. Ensure all checks pass.
-4. A maintainer will review your PR and may request changes.
+1. Fill in the PR template — describe *what* changed and *why*.
+2. Link the related issue with `Fixes #NNN` in the description.
+3. Ensure all GitHub Actions checks pass (lint, format, tests).
+4. A maintainer will review within a few days and may request changes.
+5. Once approved, a maintainer will merge your PR.
+
+PRs that add new functionality without tests will not be merged.
+
+## Adding a Search Provider
+
+The search layer uses a Strategy Pattern — adding a new provider takes minutes. See [`src/reddit_mcp/infrastructure/search/providers/README.md`](src/reddit_mcp/infrastructure/search/providers/README.md) for a step-by-step guide.
 
 ## Code of Conduct
 
-Please note that this project is released with a Contributor Code of Conduct. By participating in this project you agree to abide by its terms. See `CODE_OF_CONDUCT.md`.
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). By participating, you agree to uphold its standards. Violations can be reported via GitHub Security Advisories.
