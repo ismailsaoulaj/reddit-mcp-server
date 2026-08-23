@@ -103,3 +103,25 @@ async def test_auth_manager_invalidate_refetches_token(auth_env):
     with patch("httpx.AsyncClient.post", return_value=second_response):
         token = await manager.get_token()
     assert token == "token2"
+
+
+@pytest.mark.asyncio
+async def test_auth_manager_reuses_persistent_client(auth_env):
+    manager = RedditAuthManager(user_agent="test")
+
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"access_token": "token1", "expires_in": 3600}
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("httpx.AsyncClient.post", return_value=mock_response):
+        await manager.get_token()
+        first_client = manager._client
+        assert first_client is not None
+
+        manager.invalidate()
+        await manager.get_token()
+        second_client = manager._client
+        assert second_client is first_client
+
+    await manager.close()
+    assert manager._client is None

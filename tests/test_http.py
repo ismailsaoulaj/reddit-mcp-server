@@ -13,6 +13,7 @@ def mock_auth_manager():
     manager = MagicMock(spec=RedditAuthManager)
     manager.has_credentials = True
     manager.get_token = AsyncMock(return_value="mock_token")
+    manager.close = AsyncMock()
     return manager
 
 
@@ -348,6 +349,7 @@ async def test_http_client_cookie_auth_success(mock_auth_manager):
     mock_res.text = '{"data": {"children": []}}'
     mock_res.json.return_value = {"data": {"children": []}}
     mock_curl.get = AsyncMock(return_value=mock_res)
+    mock_curl.close = AsyncMock()
     client._curl_session = mock_curl
 
     result = await client.get_public_web("https://www.reddit.com/r/saas/rising.json")

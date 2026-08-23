@@ -94,13 +94,18 @@ class ResilientHTTPClient:
             )
 
     async def close(self):
-        """Close underlying HTTP clients."""
-        await self.client.aclose()
+        """Close underlying HTTP clients, always attempting full cleanup."""
+        try:
+            await self.client.aclose()
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Error closing httpx client: {e}")
         if self._curl_session is not None:
             try:
                 await self._curl_session.close()
             except Exception as e:  # noqa: BLE001
                 logger.debug(f"Error closing curl session: {e}")
+        if self.auth_manager is not None:
+            await self.auth_manager.close()
 
     @staticmethod
     def _get_browser_headers() -> dict[str, str]:
