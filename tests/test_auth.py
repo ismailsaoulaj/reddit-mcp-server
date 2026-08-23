@@ -1,5 +1,5 @@
 import os
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
@@ -45,9 +45,6 @@ async def test_auth_manager_client_id_only_acquires_guest_token():
             with patch("httpx.AsyncClient.post", return_value=mock_response):
                 token = await manager.get_token()
             assert token == "guest_token_123"
-
-
-from unittest.mock import MagicMock
 
 
 @pytest.mark.asyncio
