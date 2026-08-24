@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-08-24 - Hardened Pagination, Provenance & Request Shields
+
+### Fixed
+
+- **Public Web Fetches Fully Shielded (#6):** `get_public_web` now executes its entire flow (cookie tier → curl_cffi → httpx retries) under the global concurrency semaphore and the aggregate 14-second time budget, mirroring OAuth requests. Previously the semaphore was released before any network I/O, allowing unbounded concurrent fetches to bypass anti-ban protections.
+- **Graceful Malformed Page Tokens (#8):** Corrupted or invalid `page_token` values in `extract_public_opinion` now return a structured degraded response with restart instructions instead of escaping as raw internal errors. The offset parser also rejects signs, whitespace, and digit separators via strict validation.
+- **Trends Fallback Provenance (#7):** `analyze_niche_trends` now reports which tier served the data (`arctic_shift` for enriched RSS, `rss` for un-enriched RSS) with tier-specific messaging, consistent with `search_knowledge` and `extract_public_opinion`.
+
+### Changed
+
+- **Persistent Auth HTTP Client (#5):** `RedditAuthManager` reuses a single persistent `httpx.AsyncClient` across token fetches and refreshes (eliminating connection pool leaks), with full lifecycle cleanup chained through `ResilientHTTPClient.close()` and `DependencyContainer` teardown.
+
 ## [0.5.1] - 2026-08-21 - Native Open WebUI & Streamable HTTP Support
 
 ### Added

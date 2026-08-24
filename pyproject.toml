@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "reddit-mcp-ai"
-version = "0.5.1"
+version = "0.6.0"
 description = "A production-grade, open-source Reddit MCP Server"
 readme = "README.md"
 requires-python = ">=3.11"
