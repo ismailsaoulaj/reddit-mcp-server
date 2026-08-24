@@ -129,15 +129,26 @@ class ResilientHTTPClient:
         Fetch public JSON from www.reddit.com with browser impersonation and retries.
         Serves as Tier 2 direct fallback when OAuth/Guest API is unavailable.
         If a session cookie is configured, it is injected as Tier 1.5 before curl_cffi.
+
+        The entire flow (cookie tier + curl_cffi + httpx retries) is bounded by
+        TOTAL_BUDGET_SECONDS and executed under the global concurrency semaphore,
+        mirroring `get()`; expiry raises TimeoutError (callers degrade to the
+        next fallback tier).
         """
-        async with self._semaphore:
-            await self._rate_limiter.acquire()
-            target_url = url.replace(
-                "https://oauth.reddit.com", "https://www.reddit.com"
-            )
-            target_url = target_url.replace(
-                "https://old.reddit.com", "https://www.reddit.com"
-            )
+        async with (
+            self._semaphore,
+            asyncio.timeout(self.TOTAL_BUDGET_SECONDS),
+        ):
+            return await self._get_public_web_locked(url, params, max_retries)
+
+    async def _get_public_web_locked(
+        self, url: str, params: dict[str, Any] | None = None, max_retries: int = 2
+    ) -> dict[str, Any]:
+        await self._rate_limiter.acquire()
+        target_url = url.replace("https://oauth.reddit.com", "https://www.reddit.com")
+        target_url = target_url.replace(
+            "https://old.reddit.com", "https://www.reddit.com"
+        )
 
         # Tier 1.5: Cookie-based auth — bypasses WAF as a real logged-in browser session
         if self._session_cookie:
