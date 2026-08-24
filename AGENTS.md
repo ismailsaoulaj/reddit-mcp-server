@@ -29,6 +29,10 @@ Server works zero-config; credentials are optional env vars (`REDDIT_CLIENT_ID/S
 - Anti-ban shields are load-bearing: token-bucket rate limiter, global semaphore (`REDDIT_MAX_CONCURRENCY`), singleflight coalescing. New outbound HTTP calls must route through the shared HTTP client and respect these.
 - Tests use explicit `@pytest.mark.asyncio` markers; there is no conftest.py and no pytest config section — don't rely on asyncio auto-mode.
 
+## Git workflow
+
+- **Never push directly to `main`** — even when a push would succeed (admin bypass). Always create a feature branch, open a PR, let CI pass, then merge.
+
 ## Releases
 
 - Version lives only in `pyproject.toml`; keep `CHANGELOG.md` (Keep a Changelog format) in sync on bumps.
