@@ -53,6 +53,11 @@ _ARCTIC_TOKEN_PREFIX = "arctic"
 # up downstream request sizes (Reddit limit / Arctic Shift 3x oversample).
 _MAX_COMMENT_OFFSET = 10_000
 _DEPTH_CAP_MESSAGE = "Pagination depth limit reached; deeper comments are unavailable."
+INVALID_TOKEN_MESSAGE = (
+    "Invalid page_token: expected a token exactly as returned by this tool's "
+    "previous next_page_token (e.g. 'reddit:30:abc' or 'arctic:30'). Restart "
+    "pagination by calling this tool again without page_token."
+)
 
 
 def _parse_comment_page_token(page_token: str) -> tuple[str, int, str | None]:
@@ -73,10 +78,13 @@ def _parse_comment_page_token(page_token: str) -> tuple[str, int, str | None]:
             "Invalid page_token; expected a token as returned by next_page_token "
             "(e.g. 'reddit:30:abc' or 'arctic:30')."
         )
-    try:
-        offset = int(parts[1])
-    except ValueError as e:
-        raise ValueError("Invalid page_token; the offset must be an integer.") from e
+    # Strict digits check: rejects signs, whitespace, and Python's
+    # underscore digit separators before int() ever sees them.
+    if not parts[1].isdigit():
+        raise ValueError(
+            "Invalid page_token; the offset must be a non-negative integer."
+        )
+    offset = int(parts[1])
     if not 0 <= offset <= _MAX_COMMENT_OFFSET:
         raise ValueError(
             f"Invalid page_token; the offset must be between 0 and "
@@ -343,9 +351,18 @@ async def extract_public_opinion(
     comment_offset = 0
     anchor_id = None
     if page_token:
-        token_provider, comment_offset, anchor_id = _parse_comment_page_token(
-            page_token
-        )
+        try:
+            token_provider, comment_offset, anchor_id = _parse_comment_page_token(
+                page_token
+            )
+        except ValueError as e:
+            logger.warning(f"Malformed page_token rejected: {page_token!r} ({e})")
+            return PaginatedCommentResponse(
+                meta_context=build_meta_context(),
+                data=[],
+                status="degraded",
+                message=INVALID_TOKEN_MESSAGE,
+            )
     client = DependencyContainer.get_reddit_client()
     data_source = None
     message = None
