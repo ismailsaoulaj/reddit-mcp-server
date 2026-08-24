@@ -673,6 +673,48 @@ async def test_fallback_analyze_niche_trends():
 
 
 @pytest.mark.asyncio
+async def test_analyze_niche_trends_propagates_arctic_provenance(sample_post):
+    mock_reddit = DependencyContainer.get_reddit_client()
+    mock_reddit.get_subreddit_trends.return_value = (
+        [sample_post],
+        None,
+        "arctic_shift",
+    )
+
+    result = await tools.analyze_niche_trends("python")
+
+    assert result.data_source == "arctic_shift"
+    assert result.status != "degraded"
+    assert "Arctic Shift" in result.message
+    assert len(result.data) == 1
+
+
+@pytest.mark.asyncio
+async def test_analyze_niche_trends_propagates_rss_provenance(sample_post):
+    mock_reddit = DependencyContainer.get_reddit_client()
+    mock_reddit.get_subreddit_trends.return_value = ([sample_post], None, "rss")
+
+    result = await tools.analyze_niche_trends("python")
+
+    assert result.data_source == "rss"
+    assert result.status != "degraded"
+    assert "RSS" in result.message
+    assert len(result.data) == 1
+
+
+@pytest.mark.asyncio
+async def test_analyze_niche_trends_primary_source_has_no_fallback_message(sample_post):
+    mock_reddit = DependencyContainer.get_reddit_client()
+    mock_reddit.get_subreddit_trends.return_value = ([sample_post], "t3_abc", None)
+
+    result = await tools.analyze_niche_trends("python")
+
+    assert result.data_source is None
+    assert result.message is None
+    assert result.next_page_token == "t3_abc"
+
+
+@pytest.mark.asyncio
 async def test_fallback_analyze_niche_trends_on_client_error():
     mock_reddit = DependencyContainer.get_reddit_client()
     mock_reddit.get_subreddit_trends.side_effect = RedditClientError("HTTP 401")

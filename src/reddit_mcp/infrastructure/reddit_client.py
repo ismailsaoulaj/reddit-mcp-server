@@ -187,8 +187,14 @@ class RedditClient:
         limit: int = 10,
         after: str | None = None,
         before: str | None = None,
-    ) -> tuple[list[RedditPost], str | None]:
-        """Fetch live trending posts from a subreddit using cascading fallback (OAuth -> Web JSON -> Public RSS)."""
+    ) -> tuple[list[RedditPost], str | None, str | None]:
+        """Fetch live trending posts from a subreddit using cascading fallback (OAuth -> Web JSON -> Public RSS).
+
+        Returns ``(posts, after_cursor, data_source)`` where ``data_source`` is
+        ``None`` for live Reddit JSON (OAuth or public web), ``"arctic_shift"``
+        when Tier-3 RSS posts were enriched via Arctic Shift, and ``"rss"``
+        when un-enriched RSS was served.
+        """
         subreddit = subreddit.strip()
         if subreddit.startswith("/r/"):
             subreddit = subreddit[3:]
@@ -216,7 +222,7 @@ class RedditClient:
         after: str | None,
         before: str | None,
         cache_key: str,
-    ) -> tuple[list[RedditPost], str | None]:
+    ) -> tuple[list[RedditPost], str | None, str | None]:
         params = {"limit": limit, "t": time_filter}
         if after:
             params["after"] = after
@@ -253,7 +259,7 @@ class RedditClient:
                     posts.append(self._map_submission(child["data"]))
 
             new_after = data.get("data", {}).get("after")
-            result = (posts, new_after)
+            result = (posts, new_after, None)
             self._set_cache(cache_key, result)
             return result
 
@@ -273,12 +279,14 @@ class RedditClient:
             rss_posts = rss_posts[:limit]
 
             # Enrich RSS posts with scores/comment counts from Arctic Shift
+            arctic_shift_enriched = False
             if rss_posts and self.arctic_shift_client is not None:
                 try:
                     post_ids = [p.id for p in rss_posts]
                     enriched = await self.arctic_shift_client.get_posts_by_ids(post_ids)
                     enriched_map = {p.id: p for p in enriched}
                     rss_posts = [enriched_map.get(p.id, p) for p in rss_posts]
+                    arctic_shift_enriched = True
                     logger.info(
                         f"RSS enriched {len(enriched_map)}/{len(rss_posts)} posts via Arctic Shift."
                     )
@@ -287,7 +295,11 @@ class RedditClient:
                         f"Arctic Shift enrichment failed (scores will be 0): {enrich_err}"
                     )
 
-            result = (rss_posts, None)
+            result = (
+                rss_posts,
+                None,
+                "arctic_shift" if arctic_shift_enriched else "rss",
+            )
             self._set_cache(cache_key, result)
             return result
         except Exception as e:
