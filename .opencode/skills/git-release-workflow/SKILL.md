@@ -34,7 +34,9 @@ Semver, derived from changes since the last tag:
 Update **both** files together so they never disagree:
 
 1. `pyproject.toml`: bump `version` under `[project]`.
-2. `CHANGELOG.md`: add an entry at the top following the existing format of the
+2. Run `uv lock` — the lockfile pins the project's own version; a stale lock
+   fails CI's `uv sync --locked`.
+3. `CHANGELOG.md`: add an entry at the top following the existing format of the
    file (read it first). Group items as Added / Changed / Fixed / Removed /
    Security, one bullet per user-visible change, sourced from the commits being
    released.

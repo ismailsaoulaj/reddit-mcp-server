@@ -32,6 +32,7 @@ Server works zero-config; credentials are optional env vars (`REDDIT_CLIENT_ID/S
 ## Releases
 
 - Version lives only in `pyproject.toml`; keep `CHANGELOG.md` (Keep a Changelog format) in sync on bumps.
+- **Bumping the version invalidates `uv.lock`** (it pins the project's own version) — always run `uv lock` after a bump, or CI's `uv sync --locked` fails.
 - Publishing is automated: pushing a GitHub release triggers build + PyPI trusted publish (`.github/workflows/release.yml`). Don't publish manually.
 - Commit style: Conventional Commits (`feat`, `fix`, …); breaking changes need `!` and a `BREAKING CHANGE:` footer.
 
