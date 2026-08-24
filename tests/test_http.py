@@ -359,3 +359,62 @@ async def test_http_client_cookie_auth_success(mock_auth_manager):
     assert "Cookie" in call_kwargs["headers"]
     assert call_kwargs["headers"]["Cookie"] == "reddit_session=dummy_cookie_val"
     await client.close()
+
+
+@pytest.mark.asyncio
+async def test_get_public_web_enforces_semaphore_for_full_duration(
+    mock_auth_manager, monkeypatch
+):
+    monkeypatch.setattr("asyncio.sleep", AsyncMock())
+    client = ResilientHTTPClient(
+        auth_manager=mock_auth_manager, user_agent="test", max_concurrency=2
+    )
+
+    in_flight = 0
+    max_seen = 0
+
+    async def slow_curl_get(*args, **kwargs):
+        nonlocal in_flight, max_seen
+        in_flight += 1
+        max_seen = max(max_seen, in_flight)
+        await asyncio.sleep(0.01)
+        in_flight -= 1
+        mock_res = MagicMock()
+        mock_res.status_code = 200
+        mock_res.text = '{"data": {}}'
+        mock_res.json.return_value = {"data": {}}
+        return mock_res
+
+    mock_curl = MagicMock()
+    mock_curl.get = AsyncMock(side_effect=slow_curl_get)
+    mock_curl.close = AsyncMock()
+    client._curl_session = mock_curl
+
+    await asyncio.gather(
+        *[
+            client.get_public_web("https://www.reddit.com/r/test/hot.json")
+            for _ in range(6)
+        ]
+    )
+
+    assert max_seen <= 2
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_get_public_web_timeout_exceeding_budget(mock_auth_manager, monkeypatch):
+    client = ResilientHTTPClient(auth_manager=mock_auth_manager, user_agent="test")
+    client.TOTAL_BUDGET_SECONDS = 0.05
+
+    async def hang_curl_get(*args, **kwargs):
+        await asyncio.sleep(5)
+
+    mock_curl = MagicMock()
+    mock_curl.get = AsyncMock(side_effect=hang_curl_get)
+    mock_curl.close = AsyncMock()
+    client._curl_session = mock_curl
+
+    with pytest.raises(TimeoutError):
+        await client.get_public_web("https://www.reddit.com/r/test/hot.json")
+
+    await client.close()
