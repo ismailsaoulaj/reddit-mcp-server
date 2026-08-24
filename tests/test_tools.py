@@ -206,7 +206,7 @@ async def test_extract_public_opinion_short_page_returns_no_token(
 
 
 @pytest.mark.asyncio
-async def test_extract_public_opinion_invalid_page_token_raises_value_error(
+async def test_extract_public_opinion_malformed_page_token_returns_degraded(
     mock_reddit_client,
 ):
     bad_tokens = [
@@ -218,25 +218,49 @@ async def test_extract_public_opinion_invalid_page_token_raises_value_error(
         "reddit:3:",
         "reddit:3:c3:junk",
         "reddit:-1:c3",
+        "reddit: 30:c3",  # whitespace in offset
+        "reddit:+30:c3",  # explicit sign
+        "reddit:1_0:c3",  # Python digit separator
+        "arctic:1_0",
         "bogus:5",
     ]
     for bad_token in bad_tokens:
-        with pytest.raises(ValueError, match="Invalid page_token"):
-            await tools.extract_public_opinion("http://url", page_token=bad_token)
+        result = await tools.extract_public_opinion("http://url", page_token=bad_token)
+
+        assert result.status == "degraded"
+        assert len(result.data) == 0
+        assert "without page_token" in result.message
 
     mock_reddit_client.get_post_thread.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_extract_public_opinion_page_token_offset_is_bounded(
-    mock_reddit_client,
-):
-    with pytest.raises(ValueError, match="between 0 and"):
-        await tools.extract_public_opinion(
-            "http://url", page_token="reddit:99999999:c1"
-        )
+async def test_extract_public_opinion_page_token_offset_is_bounded(mock_reddit_client):
+    result = await tools.extract_public_opinion(
+        "http://url", page_token="reddit:99999999:c1"
+    )
 
+    assert result.status == "degraded"
+    assert len(result.data) == 0
     mock_reddit_client.get_post_thread.assert_not_awaited()
+
+
+def test_parse_comment_page_token_accepts_valid_tokens():
+    assert tools._parse_comment_page_token("reddit:30:abc") == ("reddit", 30, "abc")
+    assert tools._parse_comment_page_token("arctic:42") == ("arctic", 42, None)
+
+
+def test_parse_comment_page_token_rejects_empty_anchor():
+    with pytest.raises(ValueError, match="anchor"):
+        tools._parse_comment_page_token("reddit:0:")
+
+
+def test_parse_comment_page_token_rejects_non_digit_offsets():
+    for bad_offset in ["", "-1", "+1", " 1", "1_0", "0x10", "1.5"]:
+        with pytest.raises(ValueError, match="non-negative integer"):
+            tools._parse_comment_page_token(f"reddit:{bad_offset}:c1")
+        with pytest.raises(ValueError, match="non-negative integer"):
+            tools._parse_comment_page_token(f"arctic:{bad_offset}")
 
 
 @pytest.mark.asyncio
