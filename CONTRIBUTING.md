@@ -52,6 +52,11 @@ git push origin feature/my-new-feature
 
 Commit messages should follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, `chore:`, etc.).
 
+> **Lockfile rule:** if you bump the version in `pyproject.toml` or change
+> dependencies, regenerate the lockfile with `uv lock` before committing.
+> `uv.lock` pins the project's own version, and CI runs `uv sync --locked`,
+> which fails on a stale lockfile. Never edit `uv.lock` by hand.
+
 ## Pull Request Process
 
 1. Fill in the PR template — describe *what* changed and *why*.
