@@ -481,14 +481,31 @@ async def analyze_niche_trends(
     client = DependencyContainer.get_reddit_client()
 
     try:
-        posts, next_token = await client.get_subreddit_trends(
+        posts, next_token, data_source = await client.get_subreddit_trends(
             subreddit=subreddit_name, category=trend_type, limit=limit, after=page_token
         )
+        message = None
+        if data_source == "arctic_shift":
+            message = (
+                "Served via the public RSS fallback enriched by the Arctic Shift "
+                "archive; scores may lag live Reddit and pagination is unavailable."
+            )
+        elif data_source == "rss":
+            message = (
+                "Served via the public RSS fallback; scores and comment counts "
+                "are unavailable and pagination is disabled."
+            )
         return PaginatedPostResponse(
-            meta_context=build_meta_context(), data=posts, next_page_token=next_token
+            meta_context=build_meta_context(),
+            data=posts,
+            next_page_token=next_token,
+            data_source=data_source,
+            message=message,
         )
     except RedditClientError as e:
-        logger.warning(f"Failed to fetch trends for r/{subreddit_name}: {e}")
+        logger.warning(
+            f"Failed to fetch trends for r/{subreddit_name} across all tiers: {e}"
+        )
         return PaginatedPostResponse(
             meta_context=build_meta_context(),
             data=[],

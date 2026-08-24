@@ -59,9 +59,10 @@ async def test_get_subreddit_trends_success(reddit_client, mock_http_client):
     }
     mock_http_client.get.return_value = mock_response
 
-    posts, _ = await reddit_client.get_subreddit_trends("test", "hot")
+    posts, _, data_source = await reddit_client.get_subreddit_trends("test", "hot")
 
     assert len(posts) == 1
+    assert data_source is None
     post = posts[0]
     assert post.age_in_days >= 0
     assert "created_at_human" in post.model_dump()
@@ -377,10 +378,93 @@ async def test_reddit_client_fallback_to_public_web(reddit_client, mock_http_cli
         }
     )
 
-    posts, _ = await reddit_client.get_subreddit_trends("test", "hot")
+    posts, _, _ = await reddit_client.get_subreddit_trends("test", "hot")
     assert len(posts) == 1
     assert posts[0].id == "fallback_123"
     mock_http_client.get_public_web.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_reddit_client_rss_tier_reports_provenance(
+    reddit_client, mock_http_client
+):
+    # All JSON tiers fail; Tier-3 RSS serves un-enriched posts (no arctic client).
+    mock_http_client.get.side_effect = Exception("OAuth 401")
+    mock_http_client.get_public_web = AsyncMock(side_effect=Exception("403 blocked"))
+    mock_http_client.get_public_text = AsyncMock(
+        return_value=(
+            '<feed xmlns="http://www.w3.org/2005/Atom">'
+            "<entry>"
+            "<id>t3_rss1</id>"
+            "<title>RSS Fallback Post</title>"
+            '<link href="https://www.reddit.com/r/test/comments/rss1/" rel="alternate"/>'
+            "<updated>2026-08-20T00:00:00+00:00</updated>"
+            "<content>Hello RSS text</content>"
+            "</entry>"
+            "</feed>"
+        )
+    )
+
+    posts, after, data_source = await reddit_client.get_subreddit_trends("test", "hot")
+
+    assert len(posts) == 1
+    assert posts[0].id == "rss1"
+    assert after is None
+    assert data_source == "rss"
+
+
+@pytest.mark.asyncio
+async def test_reddit_client_rss_enrichment_reports_arctic_source(
+    mock_http_client, mock_search_provider
+):
+    from unittest.mock import AsyncMock, MagicMock
+
+    from reddit_mcp.domain.models import RedditPost
+    from reddit_mcp.infrastructure.reddit_client import RedditClient
+
+    arctic_client = MagicMock()
+    arctic_client.get_posts_by_ids = AsyncMock()
+    client = RedditClient(
+        http_client=mock_http_client,
+        search_provider=mock_search_provider,
+        arctic_shift_client=arctic_client,
+    )
+
+    mock_http_client.get.side_effect = Exception("OAuth 401")
+    mock_http_client.get_public_web = AsyncMock(side_effect=Exception("403 blocked"))
+    mock_http_client.get_public_text = AsyncMock(
+        return_value=(
+            '<feed xmlns="http://www.w3.org/2005/Atom">'
+            "<entry>"
+            "<id>t3_rss2</id>"
+            "<title>Enriched RSS Post</title>"
+            '<link href="https://www.reddit.com/r/test/comments/rss2/" rel="alternate"/>'
+            "<updated>2026-08-20T00:00:00+00:00</updated>"
+            "<content>Hello enriched text</content>"
+            "</entry>"
+            "</feed>"
+        )
+    )
+    enriched_post = RedditPost(
+        id="rss2",
+        title="Enriched RSS Post",
+        subreddit="test",
+        score=42,
+        upvote_ratio=0.9,
+        num_comments=7,
+        url="https://www.reddit.com/r/test/comments/rss2/",
+        age_in_days=1,
+        created_at_human="recently",
+        text_preview="Hello enriched text",
+    )
+    arctic_client.get_posts_by_ids.return_value = [enriched_post]
+
+    posts, _, data_source = await client.get_subreddit_trends("test", "hot")
+
+    assert len(posts) == 1
+    assert posts[0].score == 42
+    assert data_source == "arctic_shift"
+    arctic_client.get_posts_by_ids.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -422,7 +506,7 @@ async def test_reddit_client_singleflight_trends_coalescing(
     )
 
     # All 4 callers receive valid data
-    for posts, _ in results:
+    for posts, _, _ in results:
         assert len(posts) == 1
         assert posts[0].id == "sf_1"
 
