@@ -27,3 +27,5 @@ coverage.xml
 
 codebase.md
 terminal
+# Local tooling
+opencode.json

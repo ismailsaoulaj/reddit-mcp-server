@@ -21,16 +21,28 @@ class RedditAuthManager:
     Automatically fetches and caches the token, refreshing it before it expires.
     """
 
-    def __init__(self, user_agent: str):
+    def __init__(self, user_agent: str, client: httpx.AsyncClient | None = None):
         settings = get_settings()
         self.client_id = settings.reddit_client_id
         self.client_secret = settings.reddit_client_secret
         self.user_agent = user_agent
         self.device_id = uuid.uuid4().hex[:24]
 
+        self._client: httpx.AsyncClient | None = client
         self._token: str | None = None
         self._expires_at: float = 0.0
         self._lock = asyncio.Lock()
+
+    async def _ensure_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=httpx.Timeout(10.0))
+        return self._client
+
+    async def close(self) -> None:
+        """Close the underlying persistent HTTP client session."""
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     @property
     def has_credentials(self) -> bool:
@@ -78,43 +90,38 @@ class RedditAuthManager:
 
         data = {"grant_type": "client_credentials"}
 
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(
-                    "https://www.reddit.com/api/v1/access_token",
-                    headers=headers,
-                    data=data,
-                    timeout=10.0,
-                )
-                response.raise_for_status()
+        client = await self._ensure_client()
+        try:
+            response = await client.post(
+                "https://www.reddit.com/api/v1/access_token",
+                headers=headers,
+                data=data,
+            )
+            response.raise_for_status()
 
-                token_data = response.json()
-                self._token = token_data.get("access_token")
-                expires_in = token_data.get("expires_in", 3600)
+            token_data = response.json()
+            self._token = token_data.get("access_token")
+            expires_in = token_data.get("expires_in", 3600)
 
-                if not self._token:
-                    raise RedditAuthError(
-                        "Token response did not contain an access_token"
-                    )
+            if not self._token:
+                raise RedditAuthError("Token response did not contain an access_token")
 
-                self._expires_at = time.time() + expires_in
-                logger.info(
-                    "Successfully acquired new official Reddit OAuth access token."
-                )
+            self._expires_at = time.time() + expires_in
+            logger.info("Successfully acquired new official Reddit OAuth access token.")
 
-            except httpx.HTTPStatusError as e:
-                logger.error(
-                    f"Failed to fetch official token. HTTP Status: {e.response.status_code}. Body: {e.response.text}"
-                )
-                raise RedditAuthError(
-                    f"HTTP {e.response.status_code} during token refresh"
-                ) from e
-            except httpx.RequestError as e:
-                logger.error(f"Network error during official token refresh: {e}")
-                raise RedditAuthError(f"Network error: {e}") from e
-            except Exception as e:
-                logger.error(f"Unexpected error during official token refresh: {e}")
-                raise RedditAuthError(f"Unexpected error: {e}") from e
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"Failed to fetch official token. HTTP Status: {e.response.status_code}. Body: {e.response.text}"
+            )
+            raise RedditAuthError(
+                f"HTTP {e.response.status_code} during token refresh"
+            ) from e
+        except httpx.RequestError as e:
+            logger.error(f"Network error during official token refresh: {e}")
+            raise RedditAuthError(f"Network error: {e}") from e
+        except Exception as e:
+            logger.error(f"Unexpected error during official token refresh: {e}")
+            raise RedditAuthError(f"Unexpected error: {e}") from e
 
     async def _refresh_guest_token(self) -> None:
         """
@@ -140,34 +147,31 @@ class RedditAuthManager:
             "device_id": self.device_id,
         }
 
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(
-                    "https://www.reddit.com/api/v1/access_token",
-                    headers=headers,
-                    data=data,
-                    timeout=10.0,
-                )
-                if response.status_code == 200:
-                    token_data = response.json()
-                    self._token = token_data.get("access_token")
-                    expires_in = token_data.get("expires_in", 3600)
-                    if self._token:
-                        self._expires_at = time.time() + expires_in
-                        logger.info(
-                            "Successfully acquired anonymous Reddit Guest token."
-                        )
-                        return
+        client = await self._ensure_client()
+        try:
+            response = await client.post(
+                "https://www.reddit.com/api/v1/access_token",
+                headers=headers,
+                data=data,
+            )
+            if response.status_code == 200:
+                token_data = response.json()
+                self._token = token_data.get("access_token")
+                expires_in = token_data.get("expires_in", 3600)
+                if self._token:
+                    self._expires_at = time.time() + expires_in
+                    logger.info("Successfully acquired anonymous Reddit Guest token.")
+                    return
 
-                logger.warning(
-                    f"Guest token acquisition returned status {response.status_code}. "
-                    "Public web endpoints will be used as fallback."
-                )
-                self._token = None
-                self._expires_at = 0.0
-            except Exception as e:  # noqa: BLE001
-                logger.warning(
-                    f"Could not acquire guest token ({e}). Falling back to public web."
-                )
-                self._token = None
-                self._expires_at = 0.0
+            logger.warning(
+                f"Guest token acquisition returned status {response.status_code}. "
+                "Public web endpoints will be used as fallback."
+            )
+            self._token = None
+            self._expires_at = 0.0
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                f"Could not acquire guest token ({e}). Falling back to public web."
+            )
+            self._token = None
+            self._expires_at = 0.0

@@ -96,6 +96,7 @@ class DependencyContainer:
     @classmethod
     def _init_dependencies(cls):
         if cls._reddit_client is None:
+            auth_manager = None
             http_client = None
             try:
                 from reddit_mcp.infrastructure.settings import get_settings
@@ -124,6 +125,12 @@ class DependencyContainer:
                 cls.reset()
                 if http_client is not None:
                     close = http_client.close()
+                    try:
+                        asyncio.get_running_loop().create_task(close)
+                    except RuntimeError:
+                        asyncio.run(close)
+                elif auth_manager is not None:
+                    close = auth_manager.close()
                     try:
                         asyncio.get_running_loop().create_task(close)
                     except RuntimeError:
